@@ -17,6 +17,7 @@ import Drafts from "@/pages/Drafts";
 import DraftDetail from "@/pages/DraftDetail";
 import HistoryPage from "@/pages/History";
 import Performance from "@/pages/Performance";
+import Automation from "@/pages/Automation";
 import Keywords from "@/pages/Keywords";
 import Optimizer from "@/pages/Optimizer";
 
@@ -46,6 +47,7 @@ function App() {
               <Route path="/drafts/:id" element={<DraftDetail />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/performance" element={<Performance />} />
+              <Route path="/automation" element={<Automation />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
