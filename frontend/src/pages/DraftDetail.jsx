@@ -3,7 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { api, API } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
-import { Save, Send, ArrowLeft, History, Eye, Pencil, CheckCircle2, AlertCircle, Loader2, X, Download, FileCode } from "lucide-react";
+import { Save, Send, ArrowLeft, History, Eye, Pencil, CheckCircle2, AlertCircle, Loader2, X, Download, FileCode, Github, ExternalLink } from "lucide-react";
+import { useSites } from "@/contexts/SiteContext";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -64,11 +65,16 @@ function renderMarkdown(src) {
 export default function DraftDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { sites } = useSites();
   const [draft, setDraft] = useState(null);
   const [editing, setEditing] = useState({});
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [publishingGh, setPublishingGh] = useState(false);
   const [versions, setVersions] = useState([]);
+
+  const draftSite = sites.find((s) => s.id === draft?.site_id);
+  const ghReady = !!draftSite?.has_github_token;
 
   const load = async () => {
     const { data } = await api.get(`/drafts/${id}`);
@@ -114,6 +120,22 @@ export default function DraftDetail() {
       toast.error(err?.response?.data?.detail || "Échec de la publication");
     } finally {
       setPublishing(false);
+    }
+  };
+
+  const onPublishGitHub = async () => {
+    setPublishingGh(true);
+    try {
+      const { data } = await api.post(`/drafts/${id}/publish-github`);
+      toast.success(`Publié sur GitHub · commit ${data.commit_sha?.slice(0, 7)}`, {
+        description: data.public_url ? `Sera disponible à ${data.public_url} après redéploiement` : "Push effectué",
+        action: data.commit_url ? { label: "Voir commit", onClick: () => window.open(data.commit_url, "_blank") } : undefined,
+      });
+      load();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Échec du push GitHub");
+    } finally {
+      setPublishingGh(false);
     }
   };
 
@@ -202,6 +224,42 @@ export default function DraftDetail() {
             >
               <FileCode className="w-4 h-4" /> HTML seul
             </a>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <button
+                  data-testid="draft-publish-github-button"
+                  disabled={!ghReady || publishingGh}
+                  title={ghReady ? "Pousser sur votre repo GitHub" : "Configurez GitHub dans la page Sites d'abord"}
+                  className="inline-flex items-center gap-2 bg-slate-900 hover:bg-black disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
+                >
+                  {publishingGh ? <Loader2 className="w-4 h-4 animate-spin" /> : <Github className="w-4 h-4" />}
+                  Publier sur GitHub
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="flex items-center gap-2"><Github className="w-5 h-5" /> Publier sur GitHub ?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {draftSite && ghReady ? (
+                      <>Push de <code className="bg-slate-100 px-1 rounded">{draftSite.github_folder || "(racine)"}/&lt;slug&gt;.html</code> vers <strong>{draftSite.github_owner}/{draftSite.github_repo}</strong> · branche <strong>{draftSite.github_branch || "main"}</strong>. Vercel/Netlify redéploiera automatiquement votre site.</>
+                    ) : (
+                      <>GitHub n&apos;est pas configuré pour ce site. Ouvrez la page <strong>Sites</strong> et configurez votre Personal Access Token.</>
+                    )}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Annuler</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={onPublishGitHub}
+                    disabled={!ghReady || publishingGh}
+                    data-testid="draft-publish-github-confirm"
+                    className="bg-slate-900 hover:bg-black"
+                  >
+                    {publishingGh ? "Push en cours…" : "Confirmer le push"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <button
               onClick={onSave}
               disabled={saving}
@@ -248,6 +306,18 @@ export default function DraftDetail() {
         <div className="mb-5 p-3 border border-green-200 bg-green-50 rounded-md flex items-center gap-2 text-sm text-green-800" data-testid="draft-wix-confirmation">
           <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
           Brouillon créé sur Wix · ID <code className="font-mono text-xs">{draft.wix_draft_id}</code>
+        </div>
+      )}
+
+      {draft.github_commit_sha && (
+        <div className="mb-5 p-3 border border-slate-200 bg-slate-50 rounded-md flex items-center gap-2 text-sm text-slate-800" data-testid="draft-github-confirmation">
+          <Github className="w-4 h-4 text-slate-700 flex-shrink-0" />
+          <span>Publié sur GitHub · commit <code className="font-mono text-xs">{draft.github_commit_sha.slice(0, 7)}</code></span>
+          {draft.github_public_url && (
+            <a href={draft.github_public_url} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-[#002FA7] hover:underline text-xs">
+              <ExternalLink className="w-3 h-3" /> Voir la page publique
+            </a>
+          )}
         </div>
       )}
 

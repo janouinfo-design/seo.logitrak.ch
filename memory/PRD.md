@@ -43,14 +43,17 @@ le classement Google et la visibilité dans les IA (ChatGPT, Gemini, Perplexity,
 - [x] Performance (mock GSC) avec bandeau d'avertissement
 - [x] Dashboard avec stats et accès rapides
 - [x] UI complète FR, Swiss design, 9 pages
+- [x] Export ZIP (HTML SEO + JSON + README) pour upload FTP manuel
+- [x] **Publication GitHub** (2026-02-07) : push direct des fichiers HTML/JSON dans le repo du site via PAT — pour sites React/Vite hébergés sur Vercel/Netlify. Endpoints `/api/sites/{id}/test-github` et `/api/drafts/{id}/publish-github`. Dialogue de config par site avec test de connexion.
 
 ## Backlog / Phase 2 (P0)
 - [ ] OAuth Google → vraies données Google Search Console & Google Analytics
 - [ ] Vraie Wix App (App ID + Secret) via Wix Dev Center pour OAuth multi-comptes
-- [ ] Encryption at-rest des clés API Wix (Fernet ou KMS)
+- [ ] Encryption at-rest des clés API (Wix, GitHub PAT, FTP) via Fernet ou KMS
 - [ ] Conversion markdown → Wix RichContent pour publication réelle des articles
 - [ ] Suivi automatique du classement par mot-clé (cron)
 - [ ] Détection de doublons inter-pages + indexation/sitemap analysis
+- [ ] Auto-mise à jour du `sitemap.xml` dans le repo lors d'un push GitHub
 
 ## Backlog / Phase 3 (P1)
 - [ ] Comparateur de versions visuel (diff)

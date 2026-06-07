@@ -105,6 +105,13 @@ class SiteCreate(BaseModel):
     ftp_password: Optional[str] = None
     ftp_remote_path: Optional[str] = None  # ex: /public_html/blog/
     ftp_public_url: Optional[str] = None  # ex: https://www.logirent.ch/blog
+    # GitHub publishing (any site_type can also have GitHub config)
+    github_token: Optional[str] = None  # Personal Access Token
+    github_owner: Optional[str] = None  # ex: "username" ou "myorg"
+    github_repo: Optional[str] = None   # ex: "logirent-site"
+    github_branch: Optional[str] = "main"
+    github_folder: Optional[str] = None  # ex: "public/blog" (sans / initial)
+    github_public_url: Optional[str] = None  # ex: https://www.logirent.ch/blog
 
 
 class SiteUpdate(BaseModel):
@@ -123,6 +130,12 @@ class SiteUpdate(BaseModel):
     ftp_password: Optional[str] = None
     ftp_remote_path: Optional[str] = None
     ftp_public_url: Optional[str] = None
+    github_token: Optional[str] = None
+    github_owner: Optional[str] = None
+    github_repo: Optional[str] = None
+    github_branch: Optional[str] = None
+    github_folder: Optional[str] = None
+    github_public_url: Optional[str] = None
 
 
 class SitePublic(BaseModel):
@@ -139,6 +152,12 @@ class SitePublic(BaseModel):
     ftp_user: Optional[str] = None
     ftp_remote_path: Optional[str] = None
     ftp_public_url: Optional[str] = None
+    github_owner: Optional[str] = None
+    github_repo: Optional[str] = None
+    github_branch: Optional[str] = None
+    github_folder: Optional[str] = None
+    github_public_url: Optional[str] = None
+    has_github_token: bool = False
     has_api_key: bool
     has_vps_token: bool = False
     has_ftp_password: bool = False
@@ -216,6 +235,9 @@ class DraftPublic(BaseModel):
     updated_at: str
     wix_draft_id: Optional[str] = None
     wix_published_at: Optional[str] = None
+    github_commit_sha: Optional[str] = None
+    github_committed_at: Optional[str] = None
+    github_public_url: Optional[str] = None
 
 
 class PublishRequest(BaseModel):
@@ -314,6 +336,12 @@ def site_to_public(site: dict) -> SitePublic:
         ftp_user=site.get("ftp_user"),
         ftp_remote_path=site.get("ftp_remote_path"),
         ftp_public_url=site.get("ftp_public_url"),
+        github_owner=site.get("github_owner"),
+        github_repo=site.get("github_repo"),
+        github_branch=site.get("github_branch"),
+        github_folder=site.get("github_folder"),
+        github_public_url=site.get("github_public_url"),
+        has_github_token=bool(site.get("github_token")),
         has_api_key=bool(site.get("wix_api_key")),
         has_vps_token=bool(site.get("vps_api_token")),
         has_ftp_password=bool(site.get("ftp_password")),
@@ -354,6 +382,12 @@ async def create_site(payload: SiteCreate, user=Depends(get_current_user)):
         "ftp_password": payload.ftp_password or None,
         "ftp_remote_path": (payload.ftp_remote_path or "").strip() or None,
         "ftp_public_url": (payload.ftp_public_url or "").strip() or None,
+        "github_token": (payload.github_token or "").strip() or None,
+        "github_owner": (payload.github_owner or "").strip() or None,
+        "github_repo": (payload.github_repo or "").strip() or None,
+        "github_branch": (payload.github_branch or "main").strip() or "main",
+        "github_folder": (payload.github_folder or "").strip().strip("/") or None,
+        "github_public_url": (payload.github_public_url or "").strip().rstrip("/") or None,
         "created_at": now_iso(),
     }
     await db.sites.insert_one(site)
@@ -1422,6 +1456,197 @@ async def test_ftp_connection(site_id: str, user=Depends(get_current_user)):
         return await asyncio.to_thread(_do_test)
     except Exception as exc:
         raise HTTPException(502, f"Connexion FTP impossible : {exc}")
+
+
+# ---------------------------------------------------------------------------
+# GitHub publishing (commit HTML files to a repo via PAT)
+# ---------------------------------------------------------------------------
+GITHUB_API_BASE = "https://api.github.com"
+GITHUB_API_VERSION = "2022-11-28"
+
+
+def _github_headers(token: str) -> dict:
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        "User-Agent": "LOGI-SEO-Booster",
+    }
+
+
+async def _github_get_file_sha(client: httpx.AsyncClient, token: str, owner: str, repo: str, path: str, branch: str) -> Optional[str]:
+    """Return the SHA of an existing file, or None if it does not exist."""
+    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}"
+    resp = await client.get(url, headers=_github_headers(token), params={"ref": branch})
+    if resp.status_code == 200:
+        return resp.json().get("sha")
+    if resp.status_code == 404:
+        return None
+    raise HTTPException(
+        502,
+        f"GitHub GET contents a échoué ({resp.status_code}): {resp.text[:200]}"
+    )
+
+
+async def _github_put_file(
+    client: httpx.AsyncClient,
+    token: str,
+    owner: str,
+    repo: str,
+    path: str,
+    branch: str,
+    message: str,
+    content_text: str,
+    sha: Optional[str],
+) -> dict:
+    """Create or update a file via the GitHub contents API. Returns {commit_sha, commit_url, html_url}."""
+    import base64
+    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}"
+    encoded = base64.b64encode(content_text.encode("utf-8")).decode("utf-8")
+    payload = {"message": message, "content": encoded, "branch": branch}
+    if sha:
+        payload["sha"] = sha
+    resp = await client.put(url, headers=_github_headers(token), json=payload)
+    if resp.status_code not in (200, 201):
+        raise HTTPException(
+            502,
+            f"GitHub PUT contents a échoué ({resp.status_code}): {resp.text[:300]}"
+        )
+    data = resp.json()
+    commit = data.get("commit") or {}
+    content = data.get("content") or {}
+    return {
+        "commit_sha": commit.get("sha"),
+        "commit_url": commit.get("html_url"),
+        "file_url": content.get("html_url"),
+        "path": content.get("path") or path,
+    }
+
+
+@api.post("/sites/{site_id}/test-github")
+async def test_github_connection(site_id: str, user=Depends(get_current_user)):
+    """Verify GitHub PAT + repo + branch are valid by listing the target folder."""
+    site = await _get_user_site(site_id, user)
+    token = site.get("github_token")
+    owner = site.get("github_owner")
+    repo = site.get("github_repo")
+    branch = site.get("github_branch") or "main"
+    folder = (site.get("github_folder") or "").strip("/")
+    if not (token and owner and repo):
+        raise HTTPException(400, "Configurez d'abord github_token, github_owner et github_repo sur ce site.")
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        # 1. Check repo + branch exists
+        repo_resp = await client.get(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/branches/{branch}",
+            headers=_github_headers(token),
+        )
+        if repo_resp.status_code == 401:
+            raise HTTPException(401, "Token GitHub invalide ou expiré.")
+        if repo_resp.status_code == 404:
+            raise HTTPException(404, f"Repo introuvable ou branche '{branch}' inexistante. Vérifiez owner/repo/branch et les permissions du token.")
+        if repo_resp.status_code != 200:
+            raise HTTPException(502, f"Erreur GitHub ({repo_resp.status_code}): {repo_resp.text[:200]}")
+        repo_data = repo_resp.json()
+        # 2. List target folder (if specified) to confirm path
+        listing = []
+        if folder:
+            list_resp = await client.get(
+                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{folder}",
+                headers=_github_headers(token),
+                params={"ref": branch},
+            )
+            if list_resp.status_code == 200:
+                items = list_resp.json()
+                if isinstance(items, list):
+                    listing = [{"name": i.get("name"), "type": i.get("type")} for i in items[:20]]
+            elif list_resp.status_code == 404:
+                listing = []  # folder doesn't exist yet — will be created on first commit
+            else:
+                raise HTTPException(502, f"Erreur GitHub ({list_resp.status_code}): {list_resp.text[:200]}")
+        else:
+            # List root
+            list_resp = await client.get(
+                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents",
+                headers=_github_headers(token),
+                params={"ref": branch},
+            )
+            if list_resp.status_code == 200:
+                items = list_resp.json()
+                if isinstance(items, list):
+                    listing = [{"name": i.get("name"), "type": i.get("type")} for i in items[:20]]
+        return {
+            "ok": True,
+            "owner": owner,
+            "repo": repo,
+            "branch": branch,
+            "folder": folder or "(racine)",
+            "commit_sha": (repo_data.get("commit") or {}).get("sha", "")[:7],
+            "listing": listing,
+        }
+
+
+@api.post("/drafts/{draft_id}/publish-github")
+async def publish_draft_to_github(draft_id: str, user=Depends(get_current_user)):
+    """Commit the draft's HTML file (and JSON) to the configured GitHub repo."""
+    import json as _json
+    d = await db.drafts.find_one({"id": draft_id, "user_id": user["id"]}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Brouillon introuvable")
+    site = await db.sites.find_one({"id": d["site_id"], "user_id": user["id"]}, {"_id": 0}) or {}
+    token = site.get("github_token")
+    owner = site.get("github_owner")
+    repo = site.get("github_repo")
+    branch = site.get("github_branch") or "main"
+    folder = (site.get("github_folder") or "").strip("/")
+    if not (token and owner and repo):
+        raise HTTPException(400, "GitHub n'est pas configuré pour ce site. Configurez le token, owner et repo dans la page Sites.")
+
+    slug = _slugify(d.get("title", ""))
+    html_str = _render_html(d, site)
+    json_str = _json.dumps({
+        "id": d.get("id"),
+        "slug": slug,
+        "title": d.get("title"),
+        "meta_title": d.get("meta_title"),
+        "meta_description": d.get("meta_description"),
+        "content_type": d.get("content_type"),
+        "body_markdown": d.get("body_markdown"),
+        "keywords": d.get("keywords", []),
+        "faq": d.get("faq", []),
+        "published_at": now_iso(),
+    }, ensure_ascii=False, indent=2)
+
+    html_path = f"{folder}/{slug}.html" if folder else f"{slug}.html"
+    json_path = f"{folder}/{slug}.json" if folder else f"{slug}.json"
+    commit_msg = f"LOGI SEO: publish {slug} ({d.get('content_type','article')})"
+
+    results = []
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for path, content in ((html_path, html_str), (json_path, json_str)):
+            existing_sha = await _github_get_file_sha(client, token, owner, repo, path, branch)
+            res = await _github_put_file(client, token, owner, repo, path, branch, commit_msg, content, existing_sha)
+            res["updated"] = existing_sha is not None
+            results.append(res)
+
+    # Update draft status
+    public_base = (site.get("github_public_url") or "").rstrip("/")
+    public_url = f"{public_base}/{slug}.html" if public_base else None
+    await db.drafts.update_one(
+        {"id": draft_id},
+        {"$set": {
+            "status": "published",
+            "github_commit_sha": results[0].get("commit_sha"),
+            "github_committed_at": now_iso(),
+            "github_public_url": public_url,
+        }},
+    )
+    return {
+        "ok": True,
+        "files": results,
+        "public_url": public_url,
+        "commit_sha": results[0].get("commit_sha"),
+        "commit_url": results[0].get("commit_url"),
+    }
 
 
 @api.get("/drafts/{draft_id}/export")

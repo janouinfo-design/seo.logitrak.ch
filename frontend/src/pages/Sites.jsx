@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useSites } from "@/contexts/SiteContext";
 import PageHeader from "@/components/PageHeader";
-import { Plus, Trash2, ShieldCheck, KeyRound, Globe2, Zap, Download, Server, FolderUp } from "lucide-react";
+import { Plus, Trash2, ShieldCheck, KeyRound, Globe2, Zap, Download, Server, FolderUp, Github, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -48,6 +48,12 @@ const empty = {
   ftp_password: "",
   ftp_remote_path: "/public_html/blog",
   ftp_public_url: "",
+  github_token: "",
+  github_owner: "",
+  github_repo: "",
+  github_branch: "main",
+  github_folder: "public/blog",
+  github_public_url: "",
 };
 
 export default function Sites() {
@@ -56,6 +62,87 @@ export default function Sites() {
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
   const [quickAdding, setQuickAdding] = useState(false);
+  // GitHub config dialog
+  const [ghSite, setGhSite] = useState(null); // site being configured
+  const [ghForm, setGhForm] = useState({
+    github_token: "",
+    github_owner: "",
+    github_repo: "",
+    github_branch: "main",
+    github_folder: "public/blog",
+    github_public_url: "",
+  });
+  const [ghSaving, setGhSaving] = useState(false);
+  const [ghTesting, setGhTesting] = useState(false);
+  const [ghTestResult, setGhTestResult] = useState(null);
+  const ghSet = (k) => (e) => setGhForm((f) => ({ ...f, [k]: e?.target ? e.target.value : e }));
+
+  const openGhDialog = (site) => {
+    setGhSite(site);
+    setGhTestResult(null);
+    setGhForm({
+      github_token: "", // never echo back the token from server
+      github_owner: site.github_owner || "",
+      github_repo: site.github_repo || "",
+      github_branch: site.github_branch || "main",
+      github_folder: site.github_folder || "public/blog",
+      github_public_url: site.github_public_url || site.base_url || "",
+    });
+  };
+
+  const saveGh = async (e) => {
+    e?.preventDefault?.();
+    if (!ghSite) return;
+    setGhSaving(true);
+    try {
+      const payload = {
+        github_owner: ghForm.github_owner.trim(),
+        github_repo: ghForm.github_repo.trim(),
+        github_branch: (ghForm.github_branch || "main").trim(),
+        github_folder: ghForm.github_folder.trim(),
+        github_public_url: ghForm.github_public_url.trim() || null,
+      };
+      if (ghForm.github_token.trim()) payload.github_token = ghForm.github_token.trim();
+      await api.patch(`/sites/${ghSite.id}`, payload);
+      toast.success("Configuration GitHub enregistrée");
+      await refresh();
+      setGhSite(null);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Échec de l'enregistrement");
+    } finally {
+      setGhSaving(false);
+    }
+  };
+
+  const testGh = async () => {
+    if (!ghSite) return;
+    // Save first so test endpoint can read the latest config (esp. token)
+    setGhTesting(true);
+    setGhTestResult(null);
+    try {
+      const payload = {
+        github_owner: ghForm.github_owner.trim(),
+        github_repo: ghForm.github_repo.trim(),
+        github_branch: (ghForm.github_branch || "main").trim(),
+        github_folder: ghForm.github_folder.trim(),
+      };
+      if (ghForm.github_token.trim()) payload.github_token = ghForm.github_token.trim();
+      if (!payload.github_owner || !payload.github_repo) {
+        toast.error("Renseignez owner et repo avant de tester");
+        return;
+      }
+      await api.patch(`/sites/${ghSite.id}`, payload);
+      const { data } = await api.post(`/sites/${ghSite.id}/test-github`);
+      setGhTestResult(data);
+      toast.success(`Connexion OK · branche ${data.branch} · dernier commit ${data.commit_sha}`);
+      await refresh();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Échec du test");
+      setGhTestResult({ error: err?.response?.data?.detail || "Erreur inconnue" });
+    } finally {
+      setGhTesting(false);
+    }
+  };
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target ? e.target.value : e }));
 
@@ -503,7 +590,20 @@ export default function Sites() {
                     </div>
                   </div>
                 </div>
-                <AlertDialog>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => openGhDialog(s)}
+                    data-testid={`configure-github-${s.id}`}
+                    title="Configurer la publication GitHub"
+                    className={`p-2 rounded-md transition-colors ${
+                      s.has_github_token
+                        ? "text-emerald-600 bg-emerald-50 hover:bg-emerald-100"
+                        : "text-slate-400 hover:text-slate-900 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Github className="w-4 h-4" />
+                  </button>
+                  <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <button
                       data-testid={`delete-site-${s.id}`}
@@ -531,6 +631,7 @@ export default function Sites() {
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
+                </div>
               </div>
 
               <dl className="text-xs space-y-1.5">
@@ -611,11 +712,160 @@ export default function Sites() {
                     </div>
                   </>
                 )}
+                {s.has_github_token && (
+                  <div className="flex justify-between gap-2 pt-1.5 mt-1.5 border-t border-slate-100">
+                    <dt className="text-slate-500 flex items-center gap-1"><Github className="w-3 h-3" /> GitHub</dt>
+                    <dd className="font-mono text-emerald-700 truncate max-w-[220px]" title={`${s.github_owner}/${s.github_repo}@${s.github_branch}`}>
+                      {s.github_owner}/{s.github_repo}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </div>
           ))}
         </div>
       )}
+
+      {/* GitHub configuration dialog */}
+      <Dialog open={!!ghSite} onOpenChange={(o) => !o && setGhSite(null)}>
+        <DialogContent className="max-w-lg" data-testid="github-config-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Github className="w-5 h-5" /> Publication GitHub
+              {ghSite && <span className="text-sm font-normal text-slate-500">— {ghSite.name}</span>}
+            </DialogTitle>
+            <DialogDescription>
+              Vos articles seront commités directement dans votre repo GitHub. Vercel / Netlify redéploiera automatiquement le site avec la nouvelle page.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveGh} className="space-y-3.5">
+            <div>
+              <label className="text-xs font-medium text-slate-700 mb-1.5 block">
+                Personal Access Token (PAT) {ghSite?.has_github_token && <span className="text-emerald-600">· déjà configuré</span>}
+              </label>
+              <input
+                type="password"
+                data-testid="github-token-input"
+                value={ghForm.github_token}
+                onChange={ghSet("github_token")}
+                placeholder={ghSite?.has_github_token ? "Laissez vide pour conserver l'existant" : "ghp_xxxxxxxxxxxxxxxxxxxx"}
+                className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noreferrer" className="text-[#002FA7] hover:underline">
+                  Créez un Fine-grained token →
+                </a>{" "}
+                avec permission <strong>Contents: Read &amp; write</strong> sur ce repo.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1.5 block">Owner *</label>
+                <input
+                  required
+                  data-testid="github-owner-input"
+                  value={ghForm.github_owner}
+                  onChange={ghSet("github_owner")}
+                  placeholder="mon-username"
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1.5 block">Repo *</label>
+                <input
+                  required
+                  data-testid="github-repo-input"
+                  value={ghForm.github_repo}
+                  onChange={ghSet("github_repo")}
+                  placeholder="logirent-site"
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1.5 block">Branche</label>
+                <input
+                  data-testid="github-branch-input"
+                  value={ghForm.github_branch}
+                  onChange={ghSet("github_branch")}
+                  placeholder="main"
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-1.5 block">Dossier cible</label>
+                <input
+                  data-testid="github-folder-input"
+                  value={ghForm.github_folder}
+                  onChange={ghSet("github_folder")}
+                  placeholder="public/blog"
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">Vite/CRA : <code>public/blog</code> · Next.js : <code>public/blog</code></p>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-700 mb-1.5 block">URL publique du dossier</label>
+              <input
+                data-testid="github-public-url-input"
+                value={ghForm.github_public_url}
+                onChange={ghSet("github_public_url")}
+                placeholder="https://www.logirent.ch/blog"
+                className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">Sert à générer le lien canonical et l&apos;URL finale de chaque article.</p>
+            </div>
+
+            {ghTestResult && !ghTestResult.error && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-md p-3 text-xs" data-testid="github-test-success">
+                <div className="flex items-center gap-2 font-medium text-emerald-900">
+                  <CheckCircle2 className="w-4 h-4" /> Connexion réussie · dernier commit {ghTestResult.commit_sha}
+                </div>
+                {ghTestResult.listing?.length > 0 && (
+                  <div className="mt-2 text-emerald-800">
+                    <div className="font-medium mb-1">Contenu actuel de <code>{ghTestResult.folder}</code> :</div>
+                    <div className="font-mono text-[10px] max-h-24 overflow-auto">
+                      {ghTestResult.listing.map((i) => (
+                        <div key={i.name}>{i.type === "dir" ? "📁" : "📄"} {i.name}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {ghTestResult.listing?.length === 0 && (
+                  <div className="mt-1 text-emerald-700">Dossier vide ou inexistant — sera créé au premier commit.</div>
+                )}
+              </div>
+            )}
+            {ghTestResult?.error && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-3 text-xs text-red-800" data-testid="github-test-error">
+                ❌ {ghTestResult.error}
+              </div>
+            )}
+
+            <DialogFooter className="pt-2 gap-2">
+              <button
+                type="button"
+                onClick={testGh}
+                disabled={ghTesting}
+                data-testid="github-test-button"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm text-slate-700 border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-60"
+              >
+                {ghTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                Tester la connexion
+              </button>
+              <button
+                type="submit"
+                disabled={ghSaving}
+                data-testid="github-save-button"
+                className="px-4 py-2 bg-[#002FA7] hover:bg-[#001D6B] text-white text-sm font-medium rounded-md disabled:opacity-60"
+              >
+                {ghSaving ? "Enregistrement…" : "Enregistrer"}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
