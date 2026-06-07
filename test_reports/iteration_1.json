@@ -1,0 +1,38 @@
+{
+  "summary": "First testing run for LOGI SEO Booster. All 25 backend pytest cases passed (auth, sites CRUD, Wix mock fallback, audit, Claude Sonnet 4.5 content generation, drafts CRUD + versions/rollback, publish with Wix unavailable path, publish-logs, mocked performance, dashboard stats). Frontend smoke tests passed: login + register flow, sidebar nav (7 links + site switcher), and add-site dialog all working end-to-end with backend integration confirmed (new site appears immediately and active site switcher updates).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/me", "issue": "Returns 401 when no token, but message is 'Token manquant' — acceptable. Could also return 403 in stricter REST conventions."},
+      {"endpoint": "/api/sites POST", "issue": "Pydantic Literal validation for label is case-sensitive (e.g. 'logirent' lowercase rejected). Documented but worth noting for client devs."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is ~990 lines, currently still readable as a single file but approaching the 700-line guideline. Recommend splitting into modules (auth.py, sites.py, wix.py, audit.py, content.py, drafts.py, publish.py, performance.py) before the next iteration.",
+    "JWT_SECRET default value in /app/backend/.env contains the literal 'change-me-in-production' — make sure this is rotated before going live.",
+    "wix_api_key is stored in plain text in MongoDB (the SitePublic model only hides it from API responses). Consider encrypting at rest (Fernet) or at minimum noting this in security docs; the UI already labels it 'Chiffrée' which is currently misleading.",
+    "create_wix_draft_post sends body_markdown as a single TEXT node — markdown won't be rendered correctly on Wix. For real publishing, markdown→Wix RichContent conversion is required.",
+    "FastAPI @app.on_event('shutdown') is deprecated in FastAPI 0.100+ — should migrate to lifespan handler.",
+    "_audit_page URL regex r'^https?://[^/]+/[a-z0-9-/]*$' is overly strict (rejects query strings/dots) — but only flags as 'low' so non-blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (new)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% (smoke flows)"},
+  "test_credentials": "Tests register fresh users on the fly (test_<random>@logitest.fr / testpass123). Demo creds demo@logirent.fr / demo1234 from /app/memory/test_credentials.md are not pre-seeded; would need to be registered manually.",
+  "seed_data_creation": "No persistent seed data created. Each pytest run creates and deletes its own user/site/draft. UI smoke run leaves one user + one site behind (uitest_*@logitest.fr / 'UI Test Logirent').",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend & frontend MVP is solid. The 'Chiffrée' label on the API key in /sites is currently a UI claim only — at rest it's stored plain text in MongoDB. If main agent adds encryption, retest the create_site flow + DB inspection. Wix integration is intentionally mocked (fake API key), so /api/sites/{id}/pages always returns 5 mock pages and publish always logs 'wix_unavailable' — that is correct behaviour for this MVP and should not be flagged as a bug. AI content generation takes ~20-40s; tests use a 90s timeout.",
+  "rca_of_the_issue": "N/A — no issues blocking MVP."
+}
