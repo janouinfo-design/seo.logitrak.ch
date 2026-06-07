@@ -966,6 +966,395 @@ async def dashboard_stats(site_id: Optional[str] = None, user=Depends(get_curren
 
 
 # ---------------------------------------------------------------------------
+# Keyword Research (Claude-powered)
+# ---------------------------------------------------------------------------
+class KeywordResearchRequest(BaseModel):
+    site_id: str
+    theme: str
+    city: Optional[str] = None
+    competitors: Optional[List[str]] = None
+
+
+class KeywordCluster(BaseModel):
+    intent: Literal["locale", "informationnelle", "transactionnelle", "navigationnelle"]
+    intent_label: str
+    keywords: List[Dict[str, Any]]
+
+
+class KeywordResearchResponse(BaseModel):
+    id: str
+    site_id: str
+    theme: str
+    city: Optional[str] = None
+    clusters: List[KeywordCluster]
+    summary: str
+    created_at: str
+
+
+class SavedKeywordCreate(BaseModel):
+    site_id: str
+    keyword: str
+    intent: str
+    priority: Literal["high", "medium", "low"] = "medium"
+    notes: Optional[str] = None
+
+
+class SavedKeywordPublic(BaseModel):
+    id: str
+    site_id: str
+    keyword: str
+    intent: str
+    priority: str
+    notes: Optional[str] = None
+    created_at: str
+
+
+KEYWORD_SYSTEM = """Tu es expert SEO senior français, spécialisé immobilier et services aux entreprises.
+Tu génères des recherches de mots-clés concrètes, actionnables, focalisées sur la première page Google.
+
+RÈGLES OBLIGATOIRES :
+1. Toujours en français.
+2. Mots-clés réels, recherchés par les utilisateurs (pas de jargon interne).
+3. 4 clusters par intention : locale, informationnelle, transactionnelle, navigationnelle.
+4. Chaque mot-clé : difficulty (low/medium/high), volume_estimate (low/medium/high), priority (high/medium/low) + courte justification (1 phrase).
+5. Mélange courte traîne + longue traîne (60% longue traîne car plus facile à ranker).
+6. Toujours intégrer la ville si fournie dans les variantes locales.
+7. JSON strict.
+
+FORMAT JSON IMPOSÉ (aucun texte avant/après) :
+{
+  "summary": "Synthèse stratégique 2-3 phrases pointant les opportunités prioritaires.",
+  "clusters": [
+    {
+      "intent": "locale",
+      "intent_label": "Recherches locales",
+      "keywords": [
+        {"keyword": "...", "difficulty": "low|medium|high", "volume_estimate": "low|medium|high", "priority": "high|medium|low", "rationale": "..."}
+      ]
+    },
+    {"intent": "informationnelle", "intent_label": "Recherches informationnelles", "keywords": [...]},
+    {"intent": "transactionnelle", "intent_label": "Recherches transactionnelles", "keywords": [...]},
+    {"intent": "navigationnelle", "intent_label": "Recherches navigationnelles / marque", "keywords": [...]}
+  ]
+}
+Minimum 6 mots-clés par cluster."""
+
+
+def _parse_llm_json(text: str) -> dict:
+    import json
+    s = text.strip() if isinstance(text, str) else str(text).strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```(?:json)?\s*", "", s)
+        s = re.sub(r"\s*```$", "", s)
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", s, re.DOTALL)
+        if not m:
+            raise HTTPException(502, "Réponse IA non parsable")
+        return json.loads(m.group(0))
+
+
+@api.post("/keywords/research", response_model=KeywordResearchResponse)
+async def keyword_research(req: KeywordResearchRequest, user=Depends(get_current_user)):
+    site = await _get_user_site(req.site_id, user)
+    from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
+
+    prompt = f"""Génère une recherche de mots-clés SEO pour le site "{site['name']}" ({site['label']}).
+
+Thématique principale : {req.theme}
+Ville / zone cible : {req.city or 'France (national)'}
+Concurrents directs : {', '.join(req.competitors) if req.competitors else '(non précisés)'}
+
+Objectif : aider ce site à atteindre la première page Google rapidement.
+Privilégie la longue traîne (>3 mots) plus facile à ranker.
+Réponds en JSON strict selon le format imposé."""
+
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"kw-{user['id']}-{gen_id()}",
+        system_message=KEYWORD_SYSTEM,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+
+    try:
+        response = await chat.send_message(UserMessage(text=prompt))
+    except Exception as exc:
+        logger.exception("Keyword LLM call failed")
+        raise HTTPException(502, f"Erreur recherche mots-clés : {exc}")
+
+    data = _parse_llm_json(response if isinstance(response, str) else str(response))
+    clusters_raw = data.get("clusters", [])
+    clusters = []
+    for c in clusters_raw:
+        clusters.append(KeywordCluster(
+            intent=c.get("intent", "informationnelle"),
+            intent_label=c.get("intent_label", c.get("intent", "")),
+            keywords=c.get("keywords", []),
+        ))
+    doc = {
+        "id": gen_id(),
+        "user_id": user["id"],
+        "site_id": req.site_id,
+        "theme": req.theme,
+        "city": req.city,
+        "summary": data.get("summary", ""),
+        "clusters": [c.model_dump() for c in clusters],
+        "created_at": now_iso(),
+    }
+    await db.keyword_research.insert_one(doc)
+    return KeywordResearchResponse(**{k: v for k, v in doc.items() if k != "user_id"})
+
+
+@api.get("/keywords/research")
+async def list_keyword_research(site_id: Optional[str] = None, user=Depends(get_current_user)):
+    q: Dict[str, Any] = {"user_id": user["id"]}
+    if site_id:
+        q["site_id"] = site_id
+    items = await db.keyword_research.find(q, {"_id": 0, "user_id": 0}).sort("created_at", -1).to_list(50)
+    return {"items": items}
+
+
+@api.post("/keywords/saved", response_model=SavedKeywordPublic)
+async def save_keyword(payload: SavedKeywordCreate, user=Depends(get_current_user)):
+    await _get_user_site(payload.site_id, user)
+    existing = await db.saved_keywords.find_one({
+        "user_id": user["id"],
+        "site_id": payload.site_id,
+        "keyword": payload.keyword.strip().lower(),
+    })
+    if existing:
+        raise HTTPException(409, "Ce mot-clé est déjà dans votre liste")
+    doc = {
+        "id": gen_id(),
+        "user_id": user["id"],
+        "site_id": payload.site_id,
+        "keyword": payload.keyword.strip().lower(),
+        "intent": payload.intent,
+        "priority": payload.priority,
+        "notes": payload.notes,
+        "created_at": now_iso(),
+    }
+    await db.saved_keywords.insert_one(doc)
+    return SavedKeywordPublic(**{k: v for k, v in doc.items() if k != "user_id"})
+
+
+@api.get("/keywords/saved", response_model=List[SavedKeywordPublic])
+async def list_saved_keywords(site_id: Optional[str] = None, user=Depends(get_current_user)):
+    q: Dict[str, Any] = {"user_id": user["id"]}
+    if site_id:
+        q["site_id"] = site_id
+    items = await db.saved_keywords.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return [SavedKeywordPublic(**{k: v for k, v in d.items() if k != "user_id"}) for d in items]
+
+
+@api.delete("/keywords/saved/{kw_id}")
+async def delete_saved_keyword(kw_id: str, user=Depends(get_current_user)):
+    res = await db.saved_keywords.delete_one({"id": kw_id, "user_id": user["id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Mot-clé introuvable")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Page Optimizer (existing Wix pages) — current vs suggested
+# ---------------------------------------------------------------------------
+class PageOptimizeRequest(BaseModel):
+    site_id: str
+    page_id: str
+    focus_keyword: Optional[str] = None
+    city: Optional[str] = None
+
+
+class PageOptimizationResult(BaseModel):
+    id: str
+    site_id: str
+    page_id: str
+    page_url: str
+    focus_keyword: Optional[str]
+    current: Dict[str, Any]
+    suggested: Dict[str, Any]
+    improvements: List[str]
+    diff_summary: str
+    created_at: str
+    applied: bool = False
+    wix_updated: bool = False
+
+
+OPTIMIZER_SYSTEM = """Tu es expert SEO on-page senior français.
+Tu analyses une page existante et proposes UNE version optimisée concrète, prête à publier.
+
+Objectifs :
+- Atteindre la première page Google sur le mot-clé cible.
+- Optimiser également pour les IA (ChatGPT, Gemini, Perplexity, AI Overviews) → réponse courte en intro, FAQ, structure claire.
+- Conserver le ton et l'identité du site, ne pas hallucinations sur des chiffres.
+
+RÈGLES OBLIGATOIRES :
+1. Le titre SEO doit faire 50-60 caractères, contenir le mot-clé focus, et inclure la ville si fournie.
+2. La meta description doit faire 140-160 caractères avec un appel à l'action.
+3. UN seul H1, ciblé sur le mot-clé focus.
+4. 3-5 H2 structurés par sous-thème.
+5. Plan de contenu détaillé : intro réponse courte (2 phrases), sections, FAQ (4-6 questions), tableau comparatif si pertinent.
+6. Lister 4-6 améliorations concrètes avec leur impact attendu.
+7. JSON strict, aucun texte hors JSON.
+
+FORMAT JSON IMPOSÉ :
+{
+  "suggested": {
+    "title": "...",
+    "meta_title": "...",
+    "meta_description": "...",
+    "h1": "...",
+    "h2_plan": ["H2 1", "H2 2", ...],
+    "intro_short_answer": "Réponse courte de 2-3 phrases optimisée AI Overviews.",
+    "faq_suggested": [{"question": "...", "answer": "..."}],
+    "content_outline": "Plan détaillé en markdown avec sections, points clés, tableau comparatif si pertinent."
+  },
+  "improvements": [
+    "Concise et concrète. Ex: 'Titre allongé de 28 → 58 caractères pour intégrer le mot-clé et la ville.'"
+  ],
+  "diff_summary": "Synthèse 1-2 phrases du gain SEO attendu."
+}"""
+
+
+@api.post("/pages/optimize", response_model=PageOptimizationResult)
+async def optimize_page(req: PageOptimizeRequest, user=Depends(get_current_user)):
+    site = await _get_user_site(req.site_id, user)
+    pages = await fetch_wix_pages(site)
+    page = next((p for p in pages if p["id"] == req.page_id), None)
+    if not page:
+        raise HTTPException(404, "Page introuvable")
+
+    from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
+
+    current = {
+        "title": page.get("title"),
+        "meta_title": page.get("meta_title"),
+        "meta_description": page.get("meta_description"),
+        "h1": page.get("h1") or [],
+        "h2": page.get("h2") or [],
+        "word_count": page.get("word_count"),
+        "images_without_alt": page.get("images_without_alt", 0),
+        "url": page.get("url"),
+    }
+
+    prompt = f"""Analyse cette page Wix existante du site "{site['name']}" ({site['label']}) et propose une version optimisée.
+
+URL : {current['url']}
+Mot-clé focus : {req.focus_keyword or '(à déterminer en fonction du contenu)'}
+Ville / zone cible : {req.city or 'France (national)'}
+
+VERSION ACTUELLE :
+- Titre page : {current['title']}
+- Meta title : {current['meta_title'] or '(absent)'}
+- Meta description : {current['meta_description'] or '(absente)'}
+- H1 : {', '.join(current['h1']) or '(aucun)'}
+- H2 : {', '.join(current['h2']) or '(aucun)'}
+- Nombre de mots : {current['word_count']}
+- Images sans alt : {current['images_without_alt']}
+
+Propose une version optimisée pour ranker en première page Google sur le mot-clé focus, et aussi pour AI Overviews. Réponds en JSON strict."""
+
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"opt-{user['id']}-{gen_id()}",
+        system_message=OPTIMIZER_SYSTEM,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+
+    try:
+        response = await chat.send_message(UserMessage(text=prompt))
+    except Exception as exc:
+        logger.exception("Optimizer LLM call failed")
+        raise HTTPException(502, f"Erreur optimiseur : {exc}")
+
+    data = _parse_llm_json(response if isinstance(response, str) else str(response))
+    suggested = data.get("suggested", {})
+    improvements = data.get("improvements", [])
+    diff_summary = data.get("diff_summary", "")
+
+    doc = {
+        "id": gen_id(),
+        "user_id": user["id"],
+        "site_id": req.site_id,
+        "page_id": req.page_id,
+        "page_url": current["url"] or "",
+        "focus_keyword": req.focus_keyword,
+        "current": current,
+        "suggested": suggested,
+        "improvements": improvements,
+        "diff_summary": diff_summary,
+        "applied": False,
+        "wix_updated": False,
+        "created_at": now_iso(),
+    }
+    await db.page_optimizations.insert_one(doc)
+    return PageOptimizationResult(**{k: v for k, v in doc.items() if k != "user_id"})
+
+
+@api.get("/pages/optimizations", response_model=List[PageOptimizationResult])
+async def list_optimizations(site_id: Optional[str] = None, user=Depends(get_current_user)):
+    q: Dict[str, Any] = {"user_id": user["id"]}
+    if site_id:
+        q["site_id"] = site_id
+    items = await db.page_optimizations.find(q, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return [PageOptimizationResult(**{k: v for k, v in d.items() if k != "user_id"}) for d in items]
+
+
+@api.get("/pages/optimizations/{opt_id}", response_model=PageOptimizationResult)
+async def get_optimization(opt_id: str, user=Depends(get_current_user)):
+    d = await db.page_optimizations.find_one({"id": opt_id, "user_id": user["id"]}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Optimisation introuvable")
+    return PageOptimizationResult(**{k: v for k, v in d.items() if k != "user_id"})
+
+
+@api.post("/pages/optimizations/{opt_id}/apply", response_model=PageOptimizationResult)
+async def apply_optimization(opt_id: str, user=Depends(get_current_user)):
+    """Mark optimization as applied and create a corresponding draft for the new content."""
+    d = await db.page_optimizations.find_one({"id": opt_id, "user_id": user["id"]})
+    if not d:
+        raise HTTPException(404, "Optimisation introuvable")
+    suggested = d["suggested"] or {}
+    # Build body markdown combining intro + outline + FAQ
+    body_parts = []
+    if suggested.get("intro_short_answer"):
+        body_parts.append(suggested["intro_short_answer"])
+    if suggested.get("content_outline"):
+        body_parts.append(suggested["content_outline"])
+    faq = suggested.get("faq_suggested") or []
+    if faq:
+        body_parts.append("\n\n## FAQ\n")
+        for q in faq:
+            body_parts.append(f"\n### {q.get('question','')}\n{q.get('answer','')}\n")
+    body_md = "\n\n".join(body_parts)
+
+    draft = {
+        "id": gen_id(),
+        "user_id": user["id"],
+        "site_id": d["site_id"],
+        "content_type": "page_optimization",
+        "title": suggested.get("h1") or suggested.get("title") or "Optimisation de page",
+        "meta_title": suggested.get("meta_title"),
+        "meta_description": suggested.get("meta_description"),
+        "body_markdown": body_md,
+        "keywords": [d.get("focus_keyword")] if d.get("focus_keyword") else [],
+        "faq": faq,
+        "status": "ready",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "wix_draft_id": None,
+        "wix_published_at": None,
+    }
+    await db.drafts.insert_one(draft)
+    await db.page_optimizations.update_one(
+        {"id": opt_id, "user_id": user["id"]},
+        {"$set": {"applied": True, "draft_id": draft["id"]}},
+    )
+    d["applied"] = True
+    d["draft_id"] = draft["id"]
+    return PageOptimizationResult(**{k: v for k, v in d.items() if k != "user_id"})
+
+
+# ---------------------------------------------------------------------------
 # Root
 # ---------------------------------------------------------------------------
 @api.get("/")

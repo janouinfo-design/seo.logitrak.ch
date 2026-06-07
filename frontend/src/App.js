@@ -17,6 +17,8 @@ import Drafts from "@/pages/Drafts";
 import DraftDetail from "@/pages/DraftDetail";
 import HistoryPage from "@/pages/History";
 import Performance from "@/pages/Performance";
+import Keywords from "@/pages/Keywords";
+import Optimizer from "@/pages/Optimizer";
 
 function App() {
   return (
@@ -37,6 +39,8 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/sites" element={<Sites />} />
               <Route path="/audit" element={<Audit />} />
+              <Route path="/keywords" element={<Keywords />} />
+              <Route path="/optimizer" element={<Optimizer />} />
               <Route path="/generator" element={<Generator />} />
               <Route path="/drafts" element={<Drafts />} />
               <Route path="/drafts/:id" element={<DraftDetail />} />

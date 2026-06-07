@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useSites } from "@/contexts/SiteContext";
 import PageHeader from "@/components/PageHeader";
-import { ArrowUpRight, FileText, Search, CheckCircle2, AlertTriangle, Sparkles } from "lucide-react";
+import { ArrowUpRight, FileText, Search, CheckCircle2, AlertTriangle, Sparkles, KeyRound, Wand2 } from "lucide-react";
 
 function StatCard({ overline, value, hint, tone = "default", testid }) {
   const accent = tone === "accent" ? "text-[#002FA7]" : tone === "success" ? "text-[#16A34A]" : "text-slate-950";
@@ -81,6 +81,36 @@ export default function Dashboard() {
               </p>
               <div className="mt-3 text-xs font-medium text-[#002FA7] flex items-center gap-1 group-hover:gap-2 transition-all">
                 Auditer maintenant <ArrowUpRight className="w-3 h-3" />
+              </div>
+            </Link>
+
+            <Link
+              to="/keywords"
+              data-testid="quick-action-keywords"
+              className="group border border-slate-200 bg-white rounded-md p-5 hover:border-[#002FA7] hover:shadow-sm transition-all"
+            >
+              <KeyRound className="w-5 h-5 text-[#002FA7] mb-3" />
+              <div className="font-display font-semibold text-slate-950 mb-1">Recherche de mots-clés</div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Identifiez les mots-clés à fort potentiel — longue traîne, intentions locales, transactionnelles.
+              </p>
+              <div className="mt-3 text-xs font-medium text-[#002FA7] flex items-center gap-1 group-hover:gap-2 transition-all">
+                Détecter les mots-clés <ArrowUpRight className="w-3 h-3" />
+              </div>
+            </Link>
+
+            <Link
+              to="/optimizer"
+              data-testid="quick-action-optimizer"
+              className="group border border-slate-200 bg-white rounded-md p-5 hover:border-[#002FA7] hover:shadow-sm transition-all"
+            >
+              <Wand2 className="w-5 h-5 text-[#002FA7] mb-3" />
+              <div className="font-display font-semibold text-slate-950 mb-1">Optimiser une page Wix</div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Comparez votre page actuelle avec une version optimisée IA, puis créez un brouillon prêt à publier.
+              </p>
+              <div className="mt-3 text-xs font-medium text-[#002FA7] flex items-center gap-1 group-hover:gap-2 transition-all">
+                Optimiser maintenant <ArrowUpRight className="w-3 h-3" />
               </div>
             </Link>
 

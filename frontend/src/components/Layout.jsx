@@ -13,6 +13,8 @@ import {
   ChevronsUpDown,
   Check,
   Plus,
+  KeyRound,
+  Wand2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -27,6 +29,8 @@ const nav = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true, testid: "nav-dashboard" },
   { to: "/sites", icon: Globe, label: "Sites Wix", testid: "nav-sites" },
   { to: "/audit", icon: Search, label: "Audit SEO", testid: "nav-audit" },
+  { to: "/keywords", icon: KeyRound, label: "Mots-clés", testid: "nav-keywords" },
+  { to: "/optimizer", icon: Wand2, label: "Optimiseur de pages", testid: "nav-optimizer" },
   { to: "/generator", icon: Sparkles, label: "Générateur IA", testid: "nav-generator" },
   { to: "/drafts", icon: FileText, label: "Brouillons", testid: "nav-drafts" },
   { to: "/history", icon: History, label: "Historique", testid: "nav-history" },
