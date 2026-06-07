@@ -49,11 +49,12 @@ le classement Google et la visibilité dans les IA (ChatGPT, Gemini, Perplexity,
 - [x] **Suivi de classement par mot-clé** (2026-02-07) : snapshots quotidiens auto à 04:00 UTC via APScheduler. Endpoints `/api/sites/{id}/rank-snapshot` (manuel) et `/api/sites/{id}/rank-tracking` (séries temporelles). Bouton "Capturer maintenant" + tableau Δ position vs début dans la page Performance.
 - [x] **Auto-update sitemap.xml sur push GitHub** (2026-02-07) : lors d'un `/drafts/{id}/publish-github`, le sitemap est lu, mis à jour (lastmod) ou créé en y ajoutant l'URL de la nouvelle page. Recherche le sitemap dans `folder/sitemap.xml`, `public/sitemap.xml` puis `sitemap.xml`.
 - [x] **Chiffrement Fernet at-rest** (2026-02-07) : tous les tokens sensibles (`wix_api_key`, `ftp_password`, `vps_api_token`, `github_token`, `google_oauth.refresh_token` + `access_token`) chiffrés via Fernet avant insertion en MongoDB. Préfixe `enc::` pour permettre la migration progressive (legacy plaintext toujours lisible). `ENCRYPTION_KEY` dans `backend/.env`.
+- [x] **Détection de doublons inter-pages** (2026-02-07) : endpoint `POST /api/sites/{id}/duplicate-scan` qui calcule la similarité Jaccard sur bigrams normalisés (titre + meta + body) entre toutes les pages du site + détecte les titres H1 et meta descriptions exactement identiques. Bouton "Détecter doublons" sur la page Audit avec panneau de résultats (paires similaires colorées par sévérité, groupes de titres/metas dupliqués, recommandations IA).
 
 ## Backlog / Phase 2 (P0)
 - [ ] Vraie Wix App (App ID + Secret) via Wix Dev Center pour OAuth multi-comptes
 - [ ] Conversion markdown → Wix RichContent pour publication réelle des articles
-- [ ] Détection de doublons inter-pages + indexation/sitemap analysis
+- [ ] Alerte email auto si une page tracée chute de >5 positions sur Google
 
 ## Backlog / Phase 3 (P1)
 - [ ] Comparateur de versions visuel (diff)

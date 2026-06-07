@@ -1066,6 +1066,110 @@ async def list_audits(site_id: str, user=Depends(get_current_user)):
 
 
 # ---------------------------------------------------------------------------
+# Duplicate content detection (P2)
+# ---------------------------------------------------------------------------
+def _normalize_text(s: str) -> str:
+    import unicodedata
+    s = (s or "").lower()
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    s = re.sub(r"<[^>]+>", " ", s)  # strip HTML
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _bigrams(text: str) -> set:
+    tokens = text.split()
+    return set(zip(tokens, tokens[1:])) if len(tokens) > 1 else set(tokens)
+
+
+def _jaccard(a: set, b: set) -> float:
+    if not a and not b:
+        return 0.0
+    inter = len(a & b)
+    union = len(a | b)
+    return inter / union if union else 0.0
+
+
+@api.post("/sites/{site_id}/duplicate-scan")
+async def duplicate_scan(site_id: str, threshold: float = 0.55, user=Depends(get_current_user)):
+    """Scan all pages of a site to detect content/title/meta duplicates.
+    Returns pairs whose similarity is >= threshold (default 0.55 = ~55% bigram overlap).
+    Also detects exact-match titles & meta descriptions across pages.
+    """
+    site = await _get_user_site(site_id, user)
+    pages = await fetch_wix_pages(site)
+    if len(pages) < 2:
+        return {"site_id": site_id, "pages_scanned": len(pages), "pairs": [], "duplicate_titles": [], "duplicate_metas": []}
+
+    # Pre-compute fingerprints
+    fps = []
+    for p in pages:
+        title = p.get("title", "") or ""
+        meta = p.get("meta_description", "") or p.get("description", "") or ""
+        body = p.get("content_text") or p.get("body") or p.get("excerpt") or ""
+        norm = _normalize_text(f"{title} {meta} {body}")
+        fps.append({
+            "id": p.get("id"),
+            "title": title.strip(),
+            "url": p.get("url"),
+            "meta": meta.strip(),
+            "bigrams": _bigrams(norm),
+            "tokens_count": len(norm.split()),
+        })
+
+    # Pair-wise similarity
+    pairs = []
+    n = len(fps)
+    for i in range(n):
+        for j in range(i + 1, n):
+            sim = _jaccard(fps[i]["bigrams"], fps[j]["bigrams"])
+            if sim >= threshold and (fps[i]["tokens_count"] + fps[j]["tokens_count"]) > 20:
+                pairs.append({
+                    "page_a": {"id": fps[i]["id"], "title": fps[i]["title"], "url": fps[i]["url"]},
+                    "page_b": {"id": fps[j]["id"], "title": fps[j]["title"], "url": fps[j]["url"]},
+                    "similarity": round(sim, 3),
+                    "severity": "high" if sim >= 0.85 else "medium" if sim >= 0.7 else "low",
+                })
+    pairs.sort(key=lambda x: -x["similarity"])
+
+    # Exact-match titles & metas
+    from collections import defaultdict
+    by_title = defaultdict(list)
+    by_meta = defaultdict(list)
+    for f in fps:
+        if f["title"]:
+            by_title[f["title"].lower()].append({"id": f["id"], "url": f["url"], "title": f["title"]})
+        if f["meta"]:
+            by_meta[f["meta"].lower()].append({"id": f["id"], "url": f["url"], "title": f["title"], "meta": f["meta"]})
+    duplicate_titles = [v for v in by_title.values() if len(v) > 1]
+    duplicate_metas = [v for v in by_meta.values() if len(v) > 1]
+
+    # Recommendations
+    recs = []
+    if pairs:
+        recs.append(f"{len(pairs)} paire(s) de pages avec contenu très similaire (≥{int(threshold*100)}%). Risque de cannibalisation SEO : fusionnez ou différenciez fortement.")
+    if duplicate_titles:
+        recs.append(f"{len(duplicate_titles)} groupe(s) de pages avec un titre H1 identique. Google va choisir une seule page à indexer.")
+    if duplicate_metas:
+        recs.append(f"{len(duplicate_metas)} groupe(s) avec la même meta description. Rédigez des metas uniques par page (140-160 caractères).")
+    if not (pairs or duplicate_titles or duplicate_metas):
+        recs.append("Aucun doublon détecté. Excellent travail sur l'unicité du contenu.")
+
+    return {
+        "site_id": site_id,
+        "pages_scanned": len(pages),
+        "threshold": threshold,
+        "pairs": pairs,
+        "duplicate_titles": duplicate_titles,
+        "duplicate_metas": duplicate_metas,
+        "recommendations": recs,
+        "scanned_at": now_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
 # AI Content generator (Claude Sonnet 4.5)
 # ---------------------------------------------------------------------------
 SYSTEM_PROMPT = """Tu es un rédacteur SEO senior spécialisé immobilier et services aux entreprises.

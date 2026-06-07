@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useSites } from "@/contexts/SiteContext";
 import PageHeader from "@/components/PageHeader";
-import { Search, AlertTriangle, Info, AlertCircle, RefreshCcw, Loader2 } from "lucide-react";
+import { Search, AlertTriangle, Info, AlertCircle, RefreshCcw, Loader2, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
@@ -25,6 +25,8 @@ export default function Audit() {
   const [report, setReport] = useState(null);
   const [running, setRunning] = useState(false);
   const [history, setHistory] = useState([]);
+  const [dupScan, setDupScan] = useState(null);
+  const [scanning, setScanning] = useState(false);
 
   const loadHistory = async (siteId) => {
     if (!siteId) return;
@@ -55,6 +57,26 @@ export default function Audit() {
     }
   };
 
+  const runDuplicateScan = async () => {
+    if (!activeSite) return;
+    setScanning(true);
+    setDupScan(null);
+    try {
+      const { data } = await api.post(`/sites/${activeSite.id}/duplicate-scan`);
+      setDupScan(data);
+      const totalIssues = (data.pairs?.length || 0) + (data.duplicate_titles?.length || 0) + (data.duplicate_metas?.length || 0);
+      if (totalIssues === 0) {
+        toast.success("Aucun doublon détecté — contenu unique");
+      } else {
+        toast.warning(`${totalIssues} problème(s) de duplication détecté(s)`);
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Échec du scan");
+    } finally {
+      setScanning(false);
+    }
+  };
+
   if (!activeSite) {
     return (
       <div className="p-6 md:p-8 max-w-7xl">
@@ -71,17 +93,99 @@ export default function Audit() {
         title="Audit SEO automatique"
         description="Analyse de toutes les pages Wix : titres, méta, H1/H2, alt images, longueur de contenu, structure d'URL."
         action={
-          <button
-            onClick={runAudit}
-            disabled={running}
-            data-testid="run-audit-button"
-            className="inline-flex items-center gap-2 bg-[#002FA7] hover:bg-[#001D6B] disabled:opacity-60 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
-          >
-            {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
-            {running ? "Audit en cours…" : "Lancer un audit"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={runDuplicateScan}
+              disabled={scanning}
+              data-testid="run-duplicate-scan-button"
+              className="inline-flex items-center gap-2 bg-white border border-slate-300 hover:border-[#002FA7] hover:text-[#002FA7] disabled:opacity-60 text-slate-700 px-4 py-2 rounded-md text-sm font-medium transition-colors"
+            >
+              {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
+              {scanning ? "Scan…" : "Détecter doublons"}
+            </button>
+            <button
+              onClick={runAudit}
+              disabled={running}
+              data-testid="run-audit-button"
+              className="inline-flex items-center gap-2 bg-[#002FA7] hover:bg-[#001D6B] disabled:opacity-60 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
+            >
+              {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+              {running ? "Audit en cours…" : "Lancer un audit"}
+            </button>
+          </div>
         }
       />
+
+      {dupScan && (
+        <div className="mb-6 border border-slate-200 bg-white rounded-md overflow-hidden" data-testid="duplicate-scan-results">
+          <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+            <div className="overline">Détection de doublons — {dupScan.pages_scanned} pages analysées</div>
+            <button onClick={() => setDupScan(null)} className="text-slate-400 hover:text-slate-700 text-xs">Fermer</button>
+          </div>
+          {(dupScan.recommendations || []).length > 0 && (
+            <div className="p-4 border-b border-slate-100 bg-amber-50/40">
+              {dupScan.recommendations.map((r, i) => (
+                <div key={i} className="text-sm text-slate-800 flex items-start gap-2 py-1">
+                  <Info className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" /> {r}
+                </div>
+              ))}
+            </div>
+          )}
+          {dupScan.pairs?.length > 0 && (
+            <div className="p-4 border-b border-slate-100">
+              <div className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wider">Pages similaires (cannibalisation potentielle)</div>
+              <div className="space-y-2">
+                {dupScan.pairs.map((p, i) => (
+                  <div key={i} className="flex items-center gap-3 p-3 border border-slate-200 rounded-md" data-testid={`duplicate-pair-${i}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-slate-900 truncate" title={p.page_a.title}>{p.page_a.title || "(sans titre)"}</div>
+                      {p.page_a.url && <div className="text-xs text-slate-500 truncate font-mono">{p.page_a.url}</div>}
+                    </div>
+                    <div className="text-slate-300">↔</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-slate-900 truncate" title={p.page_b.title}>{p.page_b.title || "(sans titre)"}</div>
+                      {p.page_b.url && <div className="text-xs text-slate-500 truncate font-mono">{p.page_b.url}</div>}
+                    </div>
+                    <div className={`font-mono text-sm px-2 py-1 rounded ${p.severity === "high" ? "bg-red-100 text-red-700" : p.severity === "medium" ? "bg-amber-100 text-amber-700" : "bg-blue-50 text-blue-700"}`}>
+                      {Math.round(p.similarity * 100)}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {dupScan.duplicate_titles?.length > 0 && (
+            <div className="p-4 border-b border-slate-100">
+              <div className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wider">Titres H1 identiques</div>
+              <div className="space-y-2">
+                {dupScan.duplicate_titles.map((group, i) => (
+                  <div key={i} className="p-3 border border-slate-200 rounded-md">
+                    <div className="text-sm font-medium text-slate-900 mb-1">&quot;{group[0].title}&quot;</div>
+                    <ul className="text-xs text-slate-600 font-mono space-y-0.5">
+                      {group.map((p) => <li key={p.id}>{p.url}</li>)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {dupScan.duplicate_metas?.length > 0 && (
+            <div className="p-4">
+              <div className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wider">Meta descriptions identiques</div>
+              <div className="space-y-2">
+                {dupScan.duplicate_metas.map((group, i) => (
+                  <div key={i} className="p-3 border border-slate-200 rounded-md">
+                    <div className="text-sm text-slate-700 mb-1 italic">&quot;{group[0].meta}&quot;</div>
+                    <ul className="text-xs text-slate-600 font-mono space-y-0.5">
+                      {group.map((p) => <li key={p.id}>{p.url || p.title}</li>)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {!report ? (
         <div className="border border-dashed border-slate-300 bg-white rounded-md p-10 text-center" data-testid="audit-empty">
