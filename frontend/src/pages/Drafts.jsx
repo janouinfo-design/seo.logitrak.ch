@@ -5,6 +5,7 @@ import { useSites } from "@/contexts/SiteContext";
 import PageHeader from "@/components/PageHeader";
 import { FileText, Trash2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,6 +39,7 @@ export default function Drafts() {
   const { activeSite } = useSites();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(new Set());
 
   const load = async () => {
     setLoading(true);
@@ -46,6 +48,7 @@ export default function Drafts() {
         params: activeSite ? { site_id: activeSite.id } : {},
       });
       setItems(data);
+      setSelected(new Set());
     } finally {
       setLoading(false);
     }
@@ -57,6 +60,31 @@ export default function Drafts() {
     try {
       await api.delete(`/drafts/${id}`);
       toast.success("Brouillon supprimé");
+      load();
+    } catch {
+      toast.error("Échec");
+    }
+  };
+
+  const toggleOne = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const isAllSelected = items.length > 0 && selected.size === items.length;
+  const toggleAll = () => {
+    if (isAllSelected) setSelected(new Set());
+    else setSelected(new Set(items.map((d) => d.id)));
+  };
+
+  const onDeleteSelected = async () => {
+    if (selected.size === 0) return;
+    try {
+      const { data } = await api.post("/drafts/batch-delete", { ids: Array.from(selected) });
+      toast.success(`${data.deleted} brouillon(s) supprimé(s)`);
       load();
     } catch {
       toast.error("Échec");
@@ -94,10 +122,36 @@ export default function Drafts() {
           </Link>
         </div>
       ) : (
-        <div className="border border-slate-200 bg-white rounded-md overflow-hidden" data-testid="drafts-list">
+        <>
+          <div className="border border-slate-200 bg-white rounded-md p-3 mb-3 flex items-center justify-between" data-testid="drafts-bulk-actions">
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <Checkbox
+                checked={isAllSelected}
+                onCheckedChange={toggleAll}
+                data-testid="drafts-select-all"
+              />
+              <span className="text-sm font-medium text-slate-900">
+                Tout sélectionner <span className="text-slate-500 font-normal">({items.length})</span>
+              </span>
+              {selected.size > 0 && (
+                <span className="text-xs text-[#002FA7] ml-2">· {selected.size} sélectionné(s)</span>
+              )}
+            </label>
+            <button
+              onClick={onDeleteSelected}
+              disabled={selected.size === 0}
+              data-testid="drafts-delete-selected"
+              className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Supprimer {selected.size > 0 ? `(${selected.size})` : "la sélection"}
+            </button>
+          </div>
+          <div className="border border-slate-200 bg-white rounded-md overflow-hidden" data-testid="drafts-list">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
+                <th className="w-10 px-3 py-2.5"></th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Titre</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Statut</th>
@@ -108,8 +162,16 @@ export default function Drafts() {
             <tbody>
               {items.map((d) => {
                 const b = statusBadge(d.status);
+                const isChecked = selected.has(d.id);
                 return (
-                  <tr key={d.id} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`draft-row-${d.id}`}>
+                  <tr key={d.id} className={`border-b border-slate-100 ${isChecked ? "bg-blue-50/40" : "hover:bg-slate-50"}`} data-testid={`draft-row-${d.id}`}>
+                    <td className="px-3 py-3 align-middle">
+                      <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={() => toggleOne(d.id)}
+                        data-testid={`draft-check-${d.id}`}
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <Link to={`/drafts/${d.id}`} className="font-medium text-slate-900 hover:text-[#002FA7]">
                         {d.title}
@@ -172,6 +234,7 @@ export default function Drafts() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

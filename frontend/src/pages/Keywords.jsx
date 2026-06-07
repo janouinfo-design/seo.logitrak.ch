@@ -3,8 +3,9 @@ import { api } from "@/lib/api";
 import { useSites } from "@/contexts/SiteContext";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
-import { Search, Star, Trash2, Loader2, MapPin, Compass, ShoppingBag, Tag } from "lucide-react";
+import { Search, Star, Trash2, Loader2, MapPin, Compass, ShoppingBag, Tag, CheckSquare } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const intentMeta = {
   locale: { Icon: MapPin, color: "#002FA7", bg: "#EFF6FF", label: "Locale" },
@@ -32,6 +33,9 @@ export default function Keywords() {
   const [result, setResult] = useState(null);
   const [saved, setSaved] = useState([]);
   const [history, setHistory] = useState([]);
+  // Selection state: key = `${clusterIntent}::${keyword}`
+  const [selected, setSelected] = useState(new Set());
+  const [selectedSaved, setSelectedSaved] = useState(new Set());
 
   const loadSaved = async () => {
     if (!activeSite) return;
@@ -48,6 +52,8 @@ export default function Keywords() {
     setResult(null);
     setSaved([]);
     setHistory([]);
+    setSelected(new Set());
+    setSelectedSaved(new Set());
     if (activeSite) {
       loadSaved();
       loadHistory();
@@ -88,6 +94,103 @@ export default function Keywords() {
       loadSaved();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Échec");
+    }
+  };
+
+  // --- Selection helpers ---
+  const kwKey = (intent, keyword) => `${intent}::${keyword}`;
+
+  const toggleOne = (intent, keyword) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const k = kwKey(intent, keyword);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
+
+  const isAllInClusterSelected = (cluster) =>
+    (cluster.keywords || []).length > 0 &&
+    (cluster.keywords || []).every((kw) => selected.has(kwKey(cluster.intent, kw.keyword)));
+
+  const toggleCluster = (cluster) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const allSelected = isAllInClusterSelected(cluster);
+      (cluster.keywords || []).forEach((kw) => {
+        const k = kwKey(cluster.intent, kw.keyword);
+        if (allSelected) next.delete(k);
+        else next.add(k);
+      });
+      return next;
+    });
+  };
+
+  const allKwCount = (result?.clusters || []).reduce((acc, c) => acc + (c.keywords?.length || 0), 0);
+  const isAllSelected = allKwCount > 0 && selected.size === allKwCount;
+
+  const toggleAll = () => {
+    if (isAllSelected) {
+      setSelected(new Set());
+    } else {
+      const next = new Set();
+      (result?.clusters || []).forEach((c) => {
+        (c.keywords || []).forEach((kw) => next.add(kwKey(c.intent, kw.keyword)));
+      });
+      setSelected(next);
+    }
+  };
+
+  const onAddSelected = async () => {
+    if (selected.size === 0) return;
+    const payload = [];
+    (result?.clusters || []).forEach((c) => {
+      (c.keywords || []).forEach((kw) => {
+        if (selected.has(kwKey(c.intent, kw.keyword))) {
+          payload.push({
+            site_id: activeSite.id,
+            keyword: kw.keyword,
+            intent: c.intent,
+            priority: kw.priority || "medium",
+            notes: kw.rationale || null,
+          });
+        }
+      });
+    });
+    try {
+      const { data } = await api.post("/keywords/saved/batch", { keywords: payload });
+      toast.success(`${data.added} mot(s)-clé(s) ajouté(s)${data.skipped ? ` · ${data.skipped} déjà présent(s)` : ""}`);
+      setSelected(new Set());
+      loadSaved();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Échec de l'ajout en lot");
+    }
+  };
+
+  // Saved list selection
+  const toggleSaved = (id) => {
+    setSelectedSaved((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const isAllSavedSelected = saved.length > 0 && selectedSaved.size === saved.length;
+  const toggleAllSaved = () => {
+    if (isAllSavedSelected) setSelectedSaved(new Set());
+    else setSelectedSaved(new Set(saved.map((s) => s.id)));
+  };
+  const onDeleteSelectedSaved = async () => {
+    if (selectedSaved.size === 0) return;
+    try {
+      const { data } = await api.post("/keywords/saved/batch-delete", { ids: Array.from(selectedSaved) });
+      toast.success(`${data.deleted} mot(s)-clé(s) supprimé(s)`);
+      setSelectedSaved(new Set());
+      loadSaved();
+    } catch {
+      toast.error("Échec");
     }
   };
 
@@ -184,6 +287,32 @@ export default function Keywords() {
             </div>
           ) : (
             <div className="space-y-4">
+              {/* Sticky action bar */}
+              <div className="sticky top-2 z-10 border border-slate-200 bg-white rounded-md p-3 flex items-center justify-between shadow-sm" data-testid="kw-bulk-actions">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <Checkbox
+                    checked={isAllSelected}
+                    onCheckedChange={toggleAll}
+                    data-testid="kw-select-all-global"
+                  />
+                  <span className="text-sm font-medium text-slate-900">
+                    Tout sélectionner <span className="text-slate-500 font-normal">({allKwCount})</span>
+                  </span>
+                  {selected.size > 0 && (
+                    <span className="text-xs text-[#002FA7] ml-2">· {selected.size} sélectionné(s)</span>
+                  )}
+                </label>
+                <button
+                  onClick={onAddSelected}
+                  disabled={selected.size === 0}
+                  data-testid="kw-add-selected"
+                  className="inline-flex items-center gap-1.5 bg-[#002FA7] hover:bg-[#001D6B] disabled:opacity-40 disabled:cursor-not-allowed text-white px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm"
+                >
+                  <Star className="w-3.5 h-3.5" />
+                  Ajouter {selected.size > 0 ? `${selected.size} mot(s)-clé(s)` : "la sélection"}
+                </button>
+              </div>
+
               {result.summary && (
                 <div className="border-l-4 border-[#002FA7] bg-blue-50/50 rounded-r-md p-4 text-sm text-slate-800">
                   <div className="overline mb-2 text-[#002FA7]">Synthèse stratégique</div>
@@ -193,18 +322,25 @@ export default function Keywords() {
               {result.clusters?.map((c) => {
                 const meta = intentMeta[c.intent] || intentMeta.informationnelle;
                 const Ico = meta.Icon;
+                const clusterAllSelected = isAllInClusterSelected(c);
                 return (
                   <div key={c.intent} className="border border-slate-200 bg-white rounded-md overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between" style={{ background: meta.bg }}>
-                      <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <Checkbox
+                          checked={clusterAllSelected}
+                          onCheckedChange={() => toggleCluster(c)}
+                          data-testid={`kw-select-cluster-${c.intent}`}
+                        />
                         <Ico className="w-4 h-4" style={{ color: meta.color }} />
                         <span className="font-display font-semibold text-slate-900">{c.intent_label}</span>
-                      </div>
+                      </label>
                       <span className="text-xs text-slate-600">{c.keywords?.length || 0} mots-clés</span>
                     </div>
                     <table className="w-full text-sm">
                       <thead className="bg-slate-50 border-b border-slate-100">
                         <tr>
+                          <th className="w-10 px-3 py-2"></th>
                           <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Mot-clé</th>
                           <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Difficulté</th>
                           <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Volume</th>
@@ -216,8 +352,20 @@ export default function Keywords() {
                       <tbody>
                         {(c.keywords || []).map((kw, i) => {
                           const pri = priorityColor[kw.priority] || priorityColor.medium;
+                          const isChecked = selected.has(kwKey(c.intent, kw.keyword));
                           return (
-                            <tr key={i} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`kw-row-${c.intent}-${i}`}>
+                            <tr
+                              key={i}
+                              className={`border-b border-slate-100 ${isChecked ? "bg-blue-50/40" : "hover:bg-slate-50"}`}
+                              data-testid={`kw-row-${c.intent}-${i}`}
+                            >
+                              <td className="px-3 py-2.5 align-middle">
+                                <Checkbox
+                                  checked={isChecked}
+                                  onCheckedChange={() => toggleOne(c.intent, kw.keyword)}
+                                  data-testid={`kw-check-${c.intent}-${i}`}
+                                />
+                              </td>
                               <td className="px-4 py-2.5 font-medium text-slate-900">{kw.keyword}</td>
                               <td className={`px-4 py-2.5 font-mono text-xs ${diffColor[kw.difficulty] || ""}`}>{kw.difficulty}</td>
                               <td className="px-4 py-2.5 font-mono text-xs text-slate-700">{kw.volume_estimate}</td>
@@ -254,50 +402,85 @@ export default function Keywords() {
               Aucun mot-clé enregistré. Ajoutez vos cibles depuis l&apos;onglet « Résultats IA ».
             </div>
           ) : (
-            <div className="border border-slate-200 bg-white rounded-md overflow-hidden" data-testid="kw-saved-list">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Mot-clé</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Intention</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Priorité</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Notes</th>
-                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {saved.map((s) => {
-                    const meta = intentMeta[s.intent] || intentMeta.informationnelle;
-                    const pri = priorityColor[s.priority] || priorityColor.medium;
-                    return (
-                      <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="px-4 py-2.5 font-medium text-slate-900">{s.keyword}</td>
-                        <td className="px-4 py-2.5">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs" style={{ background: meta.bg, color: meta.color }}>
-                            {meta.label}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style={{ background: pri.bg, color: pri.color }}>
-                            {pri.label}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5 text-xs text-slate-600 max-w-md">{s.notes || "—"}</td>
-                        <td className="px-4 py-2.5 text-right">
-                          <button
-                            onClick={() => onDelete(s.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-                            data-testid={`kw-saved-delete-${s.id}`}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="border border-slate-200 bg-white rounded-md p-3 mb-3 flex items-center justify-between" data-testid="kw-saved-bulk-actions">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <Checkbox
+                    checked={isAllSavedSelected}
+                    onCheckedChange={toggleAllSaved}
+                    data-testid="kw-saved-select-all"
+                  />
+                  <span className="text-sm font-medium text-slate-900">
+                    Tout sélectionner <span className="text-slate-500 font-normal">({saved.length})</span>
+                  </span>
+                  {selectedSaved.size > 0 && (
+                    <span className="text-xs text-[#002FA7] ml-2">· {selectedSaved.size} sélectionné(s)</span>
+                  )}
+                </label>
+                <button
+                  onClick={onDeleteSelectedSaved}
+                  disabled={selectedSaved.size === 0}
+                  data-testid="kw-saved-delete-selected"
+                  className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Supprimer {selectedSaved.size > 0 ? `(${selectedSaved.size})` : "la sélection"}
+                </button>
+              </div>
+              <div className="border border-slate-200 bg-white rounded-md overflow-hidden" data-testid="kw-saved-list">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="w-10 px-3 py-2.5"></th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Mot-clé</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Intention</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Priorité</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Notes</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {saved.map((s) => {
+                      const meta = intentMeta[s.intent] || intentMeta.informationnelle;
+                      const pri = priorityColor[s.priority] || priorityColor.medium;
+                      const isChecked = selectedSaved.has(s.id);
+                      return (
+                        <tr key={s.id} className={`border-b border-slate-100 ${isChecked ? "bg-blue-50/40" : "hover:bg-slate-50"}`}>
+                          <td className="px-3 py-2.5 align-middle">
+                            <Checkbox
+                              checked={isChecked}
+                              onCheckedChange={() => toggleSaved(s.id)}
+                              data-testid={`kw-saved-check-${s.id}`}
+                            />
+                          </td>
+                          <td className="px-4 py-2.5 font-medium text-slate-900">{s.keyword}</td>
+                          <td className="px-4 py-2.5">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs" style={{ background: meta.bg, color: meta.color }}>
+                              {meta.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style={{ background: pri.bg, color: pri.color }}>
+                              {pri.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-slate-600 max-w-md">{s.notes || "—"}</td>
+                          <td className="px-4 py-2.5 text-right">
+                            <button
+                              onClick={() => onDelete(s.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                              data-testid={`kw-saved-delete-${s.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </TabsContent>
 

@@ -989,6 +989,22 @@ async def delete_draft(draft_id: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+class BatchIdsRequest(BaseModel):
+    ids: List[str]
+
+
+@api.post("/drafts/batch-delete")
+async def batch_delete_drafts(payload: BatchIdsRequest, user=Depends(get_current_user)):
+    res = await db.drafts.delete_many({"id": {"$in": payload.ids}, "user_id": user["id"]})
+    return {"deleted": res.deleted_count}
+
+
+@api.post("/keywords/saved/batch-delete")
+async def batch_delete_keywords(payload: BatchIdsRequest, user=Depends(get_current_user)):
+    res = await db.saved_keywords.delete_many({"id": {"$in": payload.ids}, "user_id": user["id"]})
+    return {"deleted": res.deleted_count}
+
+
 @api.get("/drafts/{draft_id}/versions")
 async def list_draft_versions(draft_id: str, user=Depends(get_current_user)):
     versions = await db.versions.find(
@@ -1317,6 +1333,39 @@ async def save_keyword(payload: SavedKeywordCreate, user=Depends(get_current_use
     }
     await db.saved_keywords.insert_one(doc)
     return SavedKeywordPublic(**{k: v for k, v in doc.items() if k != "user_id"})
+
+
+class BatchKeywordsRequest(BaseModel):
+    keywords: List[SavedKeywordCreate]
+
+
+@api.post("/keywords/saved/batch")
+async def batch_save_keywords(payload: BatchKeywordsRequest, user=Depends(get_current_user)):
+    added = 0
+    skipped = 0
+    for kw in payload.keywords:
+        await _get_user_site(kw.site_id, user)
+        existing = await db.saved_keywords.find_one({
+            "user_id": user["id"],
+            "site_id": kw.site_id,
+            "keyword": kw.keyword.strip().lower(),
+        })
+        if existing:
+            skipped += 1
+            continue
+        doc = {
+            "id": gen_id(),
+            "user_id": user["id"],
+            "site_id": kw.site_id,
+            "keyword": kw.keyword.strip().lower(),
+            "intent": kw.intent,
+            "priority": kw.priority,
+            "notes": kw.notes,
+            "created_at": now_iso(),
+        }
+        await db.saved_keywords.insert_one(doc)
+        added += 1
+    return {"added": added, "skipped": skipped}
 
 
 @api.get("/keywords/saved", response_model=List[SavedKeywordPublic])
