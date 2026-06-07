@@ -1424,6 +1424,89 @@ async def test_ftp_connection(site_id: str, user=Depends(get_current_user)):
         raise HTTPException(502, f"Connexion FTP impossible : {exc}")
 
 
+@api.get("/drafts/{draft_id}/export")
+async def export_draft(draft_id: str, user=Depends(get_current_user)):
+    """Generate and return a ZIP file with HTML + JSON ready to FTP-upload manually."""
+    from fastapi.responses import Response
+    import json as _json
+    import zipfile
+    from io import BytesIO
+
+    d = await db.drafts.find_one({"id": draft_id, "user_id": user["id"]}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Brouillon introuvable")
+    site = await db.sites.find_one({"id": d["site_id"], "user_id": user["id"]}, {"_id": 0}) or {}
+
+    slug = _slugify(d.get("title", ""))
+    html_str = _render_html(d, site)
+    json_str = _json.dumps({
+        "id": d.get("id"),
+        "slug": slug,
+        "title": d.get("title"),
+        "meta_title": d.get("meta_title"),
+        "meta_description": d.get("meta_description"),
+        "content_type": d.get("content_type"),
+        "body_markdown": d.get("body_markdown"),
+        "keywords": d.get("keywords", []),
+        "faq": d.get("faq", []),
+        "published_at": now_iso(),
+    }, ensure_ascii=False, indent=2)
+
+    readme = f"""LOGI SEO Booster — Export manuel
+================================
+
+Contenu généré le {datetime.now(timezone.utc).strftime("%d/%m/%Y à %H:%M UTC")}
+
+Fichiers inclus :
+- {slug}.html : page HTML complète, optimisée SEO (canonical, Open Graph,
+  JSON-LD FAQ schema, mobile-friendly). Indexable directement par Google.
+- {slug}.json : données structurées (à consommer côté React/JS si besoin).
+
+Comment publier :
+1. Connectez-vous à votre FTP (FileZilla, Cyberduck, WinSCP, etc.)
+2. Naviguez vers votre dossier web (ex: /public_html/blog ou /var/www/.../blog)
+3. Uploadez les 2 fichiers
+4. Votre contenu sera accessible à :
+     https://VOTRE-DOMAINE/blog/{slug}.html
+
+Astuce SEO : ajoutez ce nouveau lien à votre sitemap.xml et soumettez-le
+dans Google Search Console pour accélérer l'indexation.
+"""
+
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(f"{slug}.html", html_str)
+        zf.writestr(f"{slug}.json", json_str)
+        zf.writestr("README.txt", readme)
+    buf.seek(0)
+    filename = f"logi-seo-{slug}.zip"
+    return Response(
+        content=buf.read(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@api.get("/drafts/{draft_id}/export.html")
+async def export_draft_html(draft_id: str, user=Depends(get_current_user)):
+    """Return just the HTML file for direct download."""
+    from fastapi.responses import Response
+
+    d = await db.drafts.find_one({"id": draft_id, "user_id": user["id"]}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Brouillon introuvable")
+    site = await db.sites.find_one({"id": d["site_id"], "user_id": user["id"]}, {"_id": 0}) or {}
+    slug = _slugify(d.get("title", ""))
+    return Response(
+        content=_render_html(d, site),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{slug}.html"'},
+    )
+
+
+# ---------- end FTP helpers --------------------------------------------------
+
+
 @api.post("/drafts/{draft_id}/publish", response_model=DraftPublic)
 async def publish_draft(draft_id: str, payload: PublishRequest, user=Depends(get_current_user)):
     d = await db.drafts.find_one({"id": draft_id, "user_id": user["id"]})

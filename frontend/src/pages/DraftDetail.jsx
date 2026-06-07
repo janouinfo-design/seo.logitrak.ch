@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, API } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
-import { Save, Send, ArrowLeft, History, Eye, Pencil, CheckCircle2, AlertCircle, Loader2, X } from "lucide-react";
+import { Save, Send, ArrowLeft, History, Eye, Pencil, CheckCircle2, AlertCircle, Loader2, X, Download, FileCode } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -154,6 +154,54 @@ export default function DraftDetail() {
         title={draft.title}
         action={
           <div className="flex items-center gap-2">
+            <a
+              href={`${API}/drafts/${draft.id}/export?token=${localStorage.getItem("logi_token")}`}
+              onClick={async (e) => {
+                e.preventDefault();
+                try {
+                  const res = await api.get(`/drafts/${draft.id}/export`, { responseType: "blob" });
+                  const url = URL.createObjectURL(res.data);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `logi-seo-${draft.id}.zip`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                  toast.success("ZIP téléchargé — uploadez-le sur votre FTP");
+                } catch (err) {
+                  toast.error("Échec du téléchargement");
+                }
+              }}
+              data-testid="draft-download-zip"
+              className="inline-flex items-center gap-2 bg-white border border-slate-300 hover:border-[#002FA7] hover:text-[#002FA7] text-slate-700 px-4 py-2 rounded-md text-sm font-medium transition-colors"
+            >
+              <Download className="w-4 h-4" /> ZIP (HTML+JSON)
+            </a>
+            <a
+              href="#"
+              onClick={async (e) => {
+                e.preventDefault();
+                try {
+                  const res = await api.get(`/drafts/${draft.id}/export.html`, { responseType: "blob" });
+                  const url = URL.createObjectURL(res.data);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${draft.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 80)}.html`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                  toast.success("HTML téléchargé");
+                } catch (err) {
+                  toast.error("Échec du téléchargement");
+                }
+              }}
+              data-testid="draft-download-html"
+              className="inline-flex items-center gap-2 bg-white border border-slate-300 hover:border-[#002FA7] hover:text-[#002FA7] text-slate-700 px-4 py-2 rounded-md text-sm font-medium transition-colors"
+            >
+              <FileCode className="w-4 h-4" /> HTML seul
+            </a>
             <button
               onClick={onSave}
               disabled={saving}
@@ -169,14 +217,14 @@ export default function DraftDetail() {
                   data-testid="draft-publish-button"
                   className="inline-flex items-center gap-2 bg-[#002FA7] hover:bg-[#001D6B] text-white px-4 py-2 rounded-md text-sm font-medium shadow-sm"
                 >
-                  <Send className="w-4 h-4" /> Publier sur Wix
+                  <Send className="w-4 h-4" /> Publier
                 </button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Confirmer la publication ?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Un brouillon sera créé sur votre compte Wix. Aucune publication automatique ne sera faite — vous devrez valider depuis Wix.
+                    Selon le type du site actif : Wix → crée un brouillon dans Wix · VPS API → POST vers votre serveur · FTP → upload des fichiers HTML+JSON dans le dossier configuré · URL publique → marque le brouillon comme prêt à exporter.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
