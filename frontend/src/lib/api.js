@@ -3,7 +3,7 @@ import axios from "axios";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
 
-export const api = axios.create({ baseURL: API });
+export const api = axios.create({ baseURL: API, timeout: 180000 }); // 3 min for slow LLM calls
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("logi_token");

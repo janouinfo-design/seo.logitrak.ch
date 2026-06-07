@@ -51,9 +51,27 @@ export default function Generator() {
   const addKeyword = (e) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
-      const v = form.keywordInput.trim().replace(/,$/, "");
-      if (v && !form.keywords.includes(v)) {
-        setForm((f) => ({ ...f, keywords: [...f.keywords, v], keywordInput: "" }));
+      const raw = form.keywordInput.trim().replace(/,$/, "");
+      if (!raw) return;
+      // Auto-split if the user pasted multiple keywords separated by commas, semicolons or newlines
+      const parts = raw.split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
+      const toAdd = parts.filter((p) => !form.keywords.includes(p));
+      if (toAdd.length > 0) {
+        setForm((f) => ({ ...f, keywords: [...f.keywords, ...toAdd], keywordInput: "" }));
+      }
+    }
+  };
+
+  // Handle paste event — auto-split pasted text into multiple tags
+  const handlePaste = (e) => {
+    const pasted = (e.clipboardData || window.clipboardData).getData("text");
+    if (!pasted) return;
+    const parts = pasted.split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length > 1) {
+      e.preventDefault();
+      const toAdd = parts.filter((p) => !form.keywords.includes(p));
+      if (toAdd.length > 0) {
+        setForm((f) => ({ ...f, keywords: [...f.keywords, ...toAdd], keywordInput: "" }));
       }
     }
   };
@@ -175,10 +193,17 @@ export default function Generator() {
                 value={form.keywordInput}
                 onChange={(e) => setForm((f) => ({ ...f, keywordInput: e.target.value }))}
                 onKeyDown={addKeyword}
-                placeholder={form.keywords.length === 0 ? "Ex : location meublée, conciergerie…" : ""}
+                onPaste={handlePaste}
+                placeholder={form.keywords.length === 0 ? "Tapez un mot-clé puis Entrée (vous pouvez aussi coller une liste séparée par virgules)" : ""}
                 className="flex-1 min-w-[150px] py-1 text-sm outline-none bg-transparent"
               />
             </div>
+            {form.keywords.length === 0 && (
+              <p className="text-[10px] text-slate-500 mt-1">💡 Astuce : 3 à 7 mots-clés max, séparés par Entrée. Au-delà, la génération devient lente.</p>
+            )}
+            {form.keywords.length > 8 && (
+              <p className="text-[11px] text-amber-700 mt-1">⚠️ {form.keywords.length} mots-clés — la génération peut prendre 2-3 minutes.</p>
+            )}
           </div>
 
           <div>
