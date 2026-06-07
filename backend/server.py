@@ -92,25 +92,37 @@ class AuthResponse(BaseModel):
 class SiteCreate(BaseModel):
     label: Literal["Logirent", "Logitime", "Autre"]
     name: str
-    site_type: Literal["wix", "url_crawl", "vps_api"] = "wix"
-    wix_site_id: Optional[str] = None
-    wix_account_id: Optional[str] = None
-    wix_api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    vps_api_url: Optional[str] = None  # e.g. https://api.logirent.ch
-    vps_api_token: Optional[str] = None  # shared secret
-
-
-class SiteUpdate(BaseModel):
-    label: Optional[Literal["Logirent", "Logitime", "Autre"]] = None
-    name: Optional[str] = None
-    site_type: Optional[Literal["wix", "url_crawl", "vps_api"]] = None
+    site_type: Literal["wix", "url_crawl", "vps_api", "ftp"] = "wix"
     wix_site_id: Optional[str] = None
     wix_account_id: Optional[str] = None
     wix_api_key: Optional[str] = None
     base_url: Optional[str] = None
     vps_api_url: Optional[str] = None
     vps_api_token: Optional[str] = None
+    ftp_host: Optional[str] = None
+    ftp_port: Optional[int] = 21
+    ftp_user: Optional[str] = None
+    ftp_password: Optional[str] = None
+    ftp_remote_path: Optional[str] = None  # ex: /public_html/blog/
+    ftp_public_url: Optional[str] = None  # ex: https://www.logirent.ch/blog
+
+
+class SiteUpdate(BaseModel):
+    label: Optional[Literal["Logirent", "Logitime", "Autre"]] = None
+    name: Optional[str] = None
+    site_type: Optional[Literal["wix", "url_crawl", "vps_api", "ftp"]] = None
+    wix_site_id: Optional[str] = None
+    wix_account_id: Optional[str] = None
+    wix_api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    vps_api_url: Optional[str] = None
+    vps_api_token: Optional[str] = None
+    ftp_host: Optional[str] = None
+    ftp_port: Optional[int] = None
+    ftp_user: Optional[str] = None
+    ftp_password: Optional[str] = None
+    ftp_remote_path: Optional[str] = None
+    ftp_public_url: Optional[str] = None
 
 
 class SitePublic(BaseModel):
@@ -122,8 +134,14 @@ class SitePublic(BaseModel):
     wix_account_id: Optional[str] = None
     base_url: Optional[str] = None
     vps_api_url: Optional[str] = None
+    ftp_host: Optional[str] = None
+    ftp_port: Optional[int] = None
+    ftp_user: Optional[str] = None
+    ftp_remote_path: Optional[str] = None
+    ftp_public_url: Optional[str] = None
     has_api_key: bool
     has_vps_token: bool = False
+    has_ftp_password: bool = False
     created_at: str
 
 
@@ -291,8 +309,14 @@ def site_to_public(site: dict) -> SitePublic:
         wix_account_id=site.get("wix_account_id"),
         base_url=site.get("base_url"),
         vps_api_url=site.get("vps_api_url"),
+        ftp_host=site.get("ftp_host"),
+        ftp_port=site.get("ftp_port"),
+        ftp_user=site.get("ftp_user"),
+        ftp_remote_path=site.get("ftp_remote_path"),
+        ftp_public_url=site.get("ftp_public_url"),
         has_api_key=bool(site.get("wix_api_key")),
         has_vps_token=bool(site.get("vps_api_token")),
+        has_ftp_password=bool(site.get("ftp_password")),
         created_at=site["created_at"],
     )
 
@@ -306,6 +330,9 @@ async def create_site(payload: SiteCreate, user=Depends(get_current_user)):
     elif site_type == "vps_api":
         if not (payload.base_url and payload.vps_api_url and payload.vps_api_token):
             raise HTTPException(422, "Pour un site VPS API, base_url, vps_api_url et vps_api_token sont requis.")
+    elif site_type == "ftp":
+        if not (payload.ftp_host and payload.ftp_user and payload.ftp_password and payload.ftp_remote_path):
+            raise HTTPException(422, "Pour un site FTP, ftp_host, ftp_user, ftp_password et ftp_remote_path sont requis.")
     else:  # url_crawl
         if not payload.base_url:
             raise HTTPException(422, "Pour un site URL publique, base_url est requis.")
@@ -321,6 +348,12 @@ async def create_site(payload: SiteCreate, user=Depends(get_current_user)):
         "base_url": (payload.base_url or "").strip() or None,
         "vps_api_url": (payload.vps_api_url or "").strip() or None,
         "vps_api_token": (payload.vps_api_token or "").strip() or None,
+        "ftp_host": (payload.ftp_host or "").strip() or None,
+        "ftp_port": payload.ftp_port or 21,
+        "ftp_user": (payload.ftp_user or "").strip() or None,
+        "ftp_password": payload.ftp_password or None,
+        "ftp_remote_path": (payload.ftp_remote_path or "").strip() or None,
+        "ftp_public_url": (payload.ftp_public_url or "").strip() or None,
         "created_at": now_iso(),
     }
     await db.sites.insert_one(site)
@@ -708,8 +741,8 @@ async def _playwright_render_page(url: str) -> Optional[dict]:
 async def fetch_wix_pages(site: dict) -> List[dict]:
     """Dispatcher: routes to Wix API or URL crawl depending on site_type. Falls back to mock if both fail."""
     site_type = site.get("site_type", "wix")
-    if site_type in ("url_crawl", "vps_api"):
-        # vps_api sites can also be crawled (same public URL)
+    if site_type in ("url_crawl", "vps_api", "ftp"):
+        # All non-Wix types are crawled by URL
         pages = await crawl_public_site(site)
         if pages:
             return pages
@@ -1190,6 +1223,207 @@ async def publish_to_vps_api(site: dict, draft: dict) -> Optional[dict]:
     return None
 
 
+# ---------- FTP publication --------------------------------------------------
+def _slugify(s: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFD", s or "")
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower()
+    return s[:80] or gen_id()[:8]
+
+
+def _markdown_to_html(md: str) -> str:
+    """Tiny markdown→HTML converter (headings, paragraphs, lists, tables, bold/italic)."""
+    s = (md or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    def table_repl(m):
+        lines = m.group(0).strip().split("\n")
+        if len(lines) < 2:
+            return m.group(0)
+        cells = lambda l: [c.strip() for c in l.strip("|").split("|")]
+        header = cells(lines[0])
+        rows = [cells(l) for l in lines[2:]]
+        thead = "<thead><tr>" + "".join(f"<th>{h}</th>" for h in header) + "</tr></thead>"
+        tbody = "<tbody>" + "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows) + "</tbody>"
+        return f"<table>{thead}{tbody}</table>"
+    s = re.sub(r"((?:^\|.*\|\s*\n)+)", table_repl, s, flags=re.MULTILINE)
+    s = re.sub(r"^### (.+)$", r"<h3>\1</h3>", s, flags=re.MULTILINE)
+    s = re.sub(r"^## (.+)$", r"<h2>\1</h2>", s, flags=re.MULTILINE)
+    s = re.sub(r"^# (.+)$", r"<h1>\1</h1>", s, flags=re.MULTILINE)
+    s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
+    s = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", s)
+    def ul_repl(m):
+        items = m.group(0).strip().split("\n")
+        cleaned = [re.sub(r"^\s*[-*] ", "", l) for l in items]
+        lis = "".join(f"<li>{c}</li>" for c in cleaned)
+        return f"<ul>{lis}</ul>"
+    s = re.sub(r"((?:^\s*[-*] .+\n?)+)", ul_repl, s, flags=re.MULTILINE)
+    out = []
+    for block in re.split(r"\n{2,}", s):
+        b = block.strip()
+        if not b:
+            continue
+        if re.match(r"^<(h\d|ul|ol|table|p|li)", b):
+            out.append(b)
+        else:
+            out.append(f"<p>{b.replace(chr(10), '<br/>')}</p>")
+    return "\n".join(out)
+
+
+def _render_html(draft: dict, site: dict) -> str:
+    import json as _json
+    title = draft.get("title", "")
+    meta_title = draft.get("meta_title") or title
+    meta_desc = draft.get("meta_description") or ""
+    body_html = _markdown_to_html(draft.get("body_markdown", ""))
+    faq = draft.get("faq", []) or []
+    keywords = draft.get("keywords", []) or []
+    slug = _slugify(title)
+    canonical_base = (site.get("ftp_public_url") or site.get("base_url") or "").rstrip("/")
+    canonical = f"{canonical_base}/{slug}.html" if canonical_base else f"{slug}.html"
+    faq_html = ""
+    faq_jsonld = ""
+    if faq:
+        items = "".join(
+            f'<details class="faq-item"><summary>{q.get("question","")}</summary>'
+            f'<p>{q.get("answer","")}</p></details>'
+            for q in faq
+        )
+        faq_html = f'<section class="faq"><h2>Questions fréquentes</h2>{items}</section>'
+        jsonld_obj = {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "mainEntity": [
+                {"@type": "Question", "name": q.get("question", ""),
+                 "acceptedAnswer": {"@type": "Answer", "text": q.get("answer", "")}}
+                for q in faq
+            ],
+        }
+        faq_jsonld = f'<script type="application/ld+json">{_json.dumps(jsonld_obj, ensure_ascii=False)}</script>'
+    return f"""<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{meta_title}</title>
+  <meta name="description" content="{meta_desc}">
+  <meta name="keywords" content="{', '.join(keywords)}">
+  <link rel="canonical" href="{canonical}">
+  <meta property="og:title" content="{meta_title}">
+  <meta property="og:description" content="{meta_desc}">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="{canonical}">
+  <meta name="generator" content="LOGI SEO Booster">
+  {faq_jsonld}
+  <style>
+    body{{font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem;line-height:1.65;color:#020617}}
+    h1{{font-size:2.2rem;line-height:1.2;letter-spacing:-0.01em;margin-bottom:1rem}}
+    h2{{font-size:1.5rem;margin-top:2rem;color:#0f172a}}
+    h3{{font-size:1.2rem;margin-top:1.4rem;color:#1e293b}}
+    p{{margin:0.7rem 0}}
+    a{{color:#002FA7}}
+    table{{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.95rem}}
+    th,td{{border:1px solid #e2e8f0;padding:.5rem .75rem;text-align:left}}
+    th{{background:#f8fafc;font-weight:600}}
+    .faq-item{{border:1px solid #e2e8f0;border-radius:6px;padding:.75rem 1rem;margin:.5rem 0}}
+    .faq-item summary{{cursor:pointer;font-weight:600;color:#020617}}
+    .faq-item p{{margin-top:.5rem;color:#334155}}
+    .meta{{color:#64748b;font-size:.85rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid #e2e8f0}}
+  </style>
+</head>
+<body>
+  <article>
+    <h1>{title}</h1>
+    <div class="meta">Publié le {datetime.now(timezone.utc).strftime("%d/%m/%Y")} · {site.get("name","")}</div>
+    {body_html}
+    {faq_html}
+  </article>
+</body>
+</html>
+"""
+
+
+async def publish_to_ftp(site: dict, draft: dict) -> Optional[dict]:
+    """Upload HTML + JSON files to the configured FTP server."""
+    import json as _json
+    from ftplib import FTP, error_perm
+    from io import BytesIO
+
+    host = site.get("ftp_host")
+    port = site.get("ftp_port") or 21
+    user = site.get("ftp_user")
+    pwd = site.get("ftp_password")
+    remote_path = (site.get("ftp_remote_path") or "/").rstrip("/") + "/"
+    if not all((host, user, pwd, remote_path)):
+        return None
+
+    slug = _slugify(draft.get("title", ""))
+    html_bytes = _render_html(draft, site).encode("utf-8")
+    json_bytes = _json.dumps({
+        "id": draft.get("id"),
+        "slug": slug,
+        "title": draft.get("title"),
+        "meta_title": draft.get("meta_title"),
+        "meta_description": draft.get("meta_description"),
+        "content_type": draft.get("content_type"),
+        "body_markdown": draft.get("body_markdown"),
+        "keywords": draft.get("keywords", []),
+        "faq": draft.get("faq", []),
+        "published_at": now_iso(),
+    }, ensure_ascii=False, indent=2).encode("utf-8")
+
+    def _do_upload() -> dict:
+        ftp = FTP()
+        ftp.connect(host, port, timeout=15)
+        ftp.login(user, pwd)
+        # Ensure remote_path exists
+        parts = [p for p in remote_path.strip("/").split("/") if p]
+        cur = ""
+        for p in parts:
+            cur = (cur + "/" + p) if cur else "/" + p
+            try:
+                ftp.cwd(cur)
+            except error_perm:
+                try:
+                    ftp.mkd(cur)
+                    ftp.cwd(cur)
+                except error_perm:
+                    pass
+        ftp.storbinary(f"STOR {slug}.html", BytesIO(html_bytes))
+        ftp.storbinary(f"STOR {slug}.json", BytesIO(json_bytes))
+        ftp.quit()
+        return {"slug": slug, "files": [f"{slug}.html", f"{slug}.json"], "remote_path": remote_path}
+
+    try:
+        return await asyncio.to_thread(_do_upload)
+    except Exception as exc:
+        logger.warning("FTP publish error: %s", exc)
+        return None
+
+
+@api.post("/sites/{site_id}/test-ftp")
+async def test_ftp_connection(site_id: str, user=Depends(get_current_user)):
+    """Test FTP credentials without uploading anything."""
+    from ftplib import FTP
+    site = await _get_user_site(site_id, user)
+    if site.get("site_type") != "ftp":
+        raise HTTPException(400, "Ce site n'est pas configuré en FTP.")
+    def _do_test() -> dict:
+        ftp = FTP()
+        ftp.connect(site["ftp_host"], site.get("ftp_port") or 21, timeout=10)
+        ftp.login(site["ftp_user"], site["ftp_password"])
+        try:
+            ftp.cwd(site.get("ftp_remote_path") or "/")
+            cwd = ftp.pwd()
+        except Exception:
+            cwd = "?"
+        ftp.quit()
+        return {"ok": True, "cwd": cwd}
+    try:
+        return await asyncio.to_thread(_do_test)
+    except Exception as exc:
+        raise HTTPException(502, f"Connexion FTP impossible : {exc}")
+
+
 @api.post("/drafts/{draft_id}/publish", response_model=DraftPublic)
 async def publish_draft(draft_id: str, payload: PublishRequest, user=Depends(get_current_user)):
     d = await db.drafts.find_one({"id": draft_id, "user_id": user["id"]})
@@ -1200,6 +1434,7 @@ async def publish_draft(draft_id: str, payload: PublishRequest, user=Depends(get
     site_type = site.get("site_type", "wix")
     wix_draft_id: Optional[str] = None
     vps_published_id: Optional[str] = None
+    ftp_published_slug: Optional[str] = None
     status_label: str
 
     if site_type == "wix":
@@ -1218,6 +1453,13 @@ async def publish_draft(draft_id: str, payload: PublishRequest, user=Depends(get
             status_label = "vps_success"
         else:
             status_label = "vps_unavailable"
+    elif site_type == "ftp":
+        ftp_resp = await publish_to_ftp(site, d)
+        if ftp_resp:
+            ftp_published_slug = ftp_resp.get("slug")
+            status_label = "ftp_success"
+        else:
+            status_label = "ftp_unavailable"
     else:
         status_label = "ready_for_export"
 
@@ -1230,13 +1472,14 @@ async def publish_draft(draft_id: str, payload: PublishRequest, user=Depends(get
         "action": "publish_attempt",
         "wix_draft_id": wix_draft_id,
         "vps_published_id": vps_published_id,
+        "ftp_published_slug": ftp_published_slug,
         "status": status_label,
         "site_type": site_type,
         "created_at": now_iso(),
     }
     await db.publish_logs.insert_one(log_entry)
 
-    is_published = bool(wix_draft_id or vps_published_id)
+    is_published = bool(wix_draft_id or vps_published_id or ftp_published_slug)
     updates = {
         "wix_draft_id": wix_draft_id,
         "status": "published" if is_published else "ready",

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useSites } from "@/contexts/SiteContext";
 import PageHeader from "@/components/PageHeader";
-import { Plus, Trash2, ShieldCheck, KeyRound, Globe2, Zap, Download, Server } from "lucide-react";
+import { Plus, Trash2, ShieldCheck, KeyRound, Globe2, Zap, Download, Server, FolderUp } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -42,6 +42,12 @@ const empty = {
   wix_api_key: "",
   vps_api_url: "",
   vps_api_token: "",
+  ftp_host: "",
+  ftp_port: 21,
+  ftp_user: "",
+  ftp_password: "",
+  ftp_remote_path: "/public_html/blog",
+  ftp_public_url: "",
 };
 
 export default function Sites() {
@@ -71,6 +77,14 @@ export default function Sites() {
       if (form.site_type === "vps_api") {
         payload.vps_api_url = form.vps_api_url;
         payload.vps_api_token = form.vps_api_token;
+      }
+      if (form.site_type === "ftp") {
+        payload.ftp_host = form.ftp_host;
+        payload.ftp_port = parseInt(form.ftp_port || 21, 10);
+        payload.ftp_user = form.ftp_user;
+        payload.ftp_password = form.ftp_password;
+        payload.ftp_remote_path = form.ftp_remote_path;
+        payload.ftp_public_url = form.ftp_public_url || null;
       }
       const { data } = await api.post("/sites", payload);
       toast.success(`${data.name} connecté`);
@@ -155,7 +169,7 @@ export default function Sites() {
                 </DialogHeader>
                 <form onSubmit={onSubmit} className="space-y-3.5" data-testid="add-site-form">
                   {/* Site type selector */}
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     <button
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, site_type: "url_crawl" }))}
@@ -172,6 +186,20 @@ export default function Sites() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => setForm((f) => ({ ...f, site_type: "ftp" }))}
+                      data-testid="site-type-ftp"
+                      className={`p-3 border rounded-md text-left transition-all ${
+                        form.site_type === "ftp"
+                          ? "border-[#002FA7] bg-blue-50/50 ring-2 ring-[#002FA7]/20"
+                          : "border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      <FolderUp className="w-4 h-4 text-[#002FA7] mb-1.5" />
+                      <div className="text-xs font-semibold text-slate-950">FTP</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">Le plus simple</div>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setForm((f) => ({ ...f, site_type: "vps_api" }))}
                       data-testid="site-type-vps-api"
                       className={`p-3 border rounded-md text-left transition-all ${
@@ -182,7 +210,7 @@ export default function Sites() {
                     >
                       <Server className="w-4 h-4 text-[#002FA7] mb-1.5" />
                       <div className="text-xs font-semibold text-slate-950">VPS API</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">Logirent / Logitime</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">Node.js</div>
                     </button>
                     <button
                       type="button"
@@ -196,7 +224,7 @@ export default function Sites() {
                     >
                       <KeyRound className="w-4 h-4 text-[#002FA7] mb-1.5" />
                       <div className="text-xs font-semibold text-slate-950">Wix (API)</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">Lecture + publication</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">API native</div>
                     </button>
                   </div>
 
@@ -233,6 +261,92 @@ export default function Sites() {
                       className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
                     />
                   </div>
+
+                  {form.site_type === "ftp" && (
+                    <div className="border-t border-slate-100 pt-3.5 space-y-3.5">
+                      <div className="text-xs text-slate-700 bg-blue-50 border border-blue-200 rounded p-2.5">
+                        <strong>FTP simple :</strong> les contenus sont uploadés en <strong>HTML + JSON</strong> dans le dossier choisi. Les fichiers HTML sont directement indexables par Google (pas besoin de SSR).
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="col-span-2">
+                          <label className="text-xs font-medium text-slate-700 mb-1.5 block">Hôte FTP *</label>
+                          <input
+                            required={form.site_type === "ftp"}
+                            data-testid="site-ftp-host-input"
+                            value={form.ftp_host}
+                            onChange={set("ftp_host")}
+                            placeholder="ftp.logirent.ch"
+                            className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-700 mb-1.5 block">Port</label>
+                          <input
+                            data-testid="site-ftp-port-input"
+                            type="number"
+                            value={form.ftp_port}
+                            onChange={set("ftp_port")}
+                            className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-700 mb-1.5 block">Utilisateur *</label>
+                          <input
+                            required={form.site_type === "ftp"}
+                            data-testid="site-ftp-user-input"
+                            value={form.ftp_user}
+                            onChange={set("ftp_user")}
+                            placeholder="ftpuser"
+                            className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-700 mb-1.5 block">Mot de passe *</label>
+                          <input
+                            required={form.site_type === "ftp"}
+                            data-testid="site-ftp-password-input"
+                            type="password"
+                            value={form.ftp_password}
+                            onChange={set("ftp_password")}
+                            className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-700 mb-1.5 block">Dossier distant *</label>
+                        <input
+                          required={form.site_type === "ftp"}
+                          data-testid="site-ftp-path-input"
+                          value={form.ftp_remote_path}
+                          onChange={set("ftp_remote_path")}
+                          placeholder="/public_html/blog"
+                          className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                        />
+                        <div className="text-[11px] text-slate-500 mt-1.5">
+                          Exemples par hébergeur :
+                          <span className="font-mono mx-1 text-slate-700">/public_html/blog</span>(cPanel) ·
+                          <span className="font-mono mx-1 text-slate-700">/httpdocs/blog</span>(Plesk) ·
+                          <span className="font-mono mx-1 text-slate-700">/var/www/logirent/blog</span>(VPS Linux) ·
+                          <span className="font-mono mx-1 text-slate-700">/www/blog</span>(OVH)
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-700 mb-1.5 block">URL publique du dossier (pour la canonical) </label>
+                        <input
+                          data-testid="site-ftp-public-url-input"
+                          value={form.ftp_public_url}
+                          onChange={set("ftp_public_url")}
+                          placeholder="https://www.logirent.ch/blog"
+                          className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                        />
+                        <div className="text-[11px] text-slate-500 mt-1.5">
+                          URL où ces fichiers seront accessibles. Ex : si le dossier <span className="font-mono">/public_html/blog</span> est servi sous <span className="font-mono">https://www.logirent.ch/blog</span>.
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {form.site_type === "vps_api" && (
                     <div className="border-t border-slate-100 pt-3.5 space-y-3.5">
@@ -369,7 +483,11 @@ export default function Sites() {
                   <div>
                     <div className="font-display font-semibold text-slate-950">{s.name}</div>
                     <div className="text-xs text-slate-500 flex items-center gap-1.5">
-                      {s.site_type === "vps_api" ? (
+                      {s.site_type === "ftp" ? (
+                        <>
+                          <FolderUp className="w-3 h-3" /> FTP · {s.label}
+                        </>
+                      ) : s.site_type === "vps_api" ? (
                         <>
                           <Server className="w-3 h-3" /> VPS API · {s.label}
                         </>
@@ -416,7 +534,32 @@ export default function Sites() {
               </div>
 
               <dl className="text-xs space-y-1.5">
-                {s.site_type === "vps_api" ? (
+                {s.site_type === "ftp" ? (
+                  <>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-500">Hôte FTP</dt>
+                      <dd className="font-mono text-slate-800 truncate max-w-[220px]">{s.ftp_host}:{s.ftp_port}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-500">Utilisateur</dt>
+                      <dd className="font-mono text-slate-800 truncate max-w-[180px]">{s.ftp_user}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-500">Dossier distant</dt>
+                      <dd className="font-mono text-slate-800 truncate max-w-[200px]">{s.ftp_remote_path}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-500">URL publique</dt>
+                      <dd className="text-slate-800 truncate max-w-[220px]">{s.ftp_public_url || "—"}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-500">Mot de passe</dt>
+                      <dd className="flex items-center gap-1 text-[#16A34A]">
+                        <ShieldCheck className="w-3.5 h-3.5" /> Chiffré
+                      </dd>
+                    </div>
+                  </>
+                ) : s.site_type === "vps_api" ? (
                   <>
                     <div className="flex justify-between gap-2">
                       <dt className="text-slate-500">URL site</dt>
