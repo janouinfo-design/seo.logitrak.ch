@@ -45,13 +45,13 @@ le classement Google et la visibilité dans les IA (ChatGPT, Gemini, Perplexity,
 - [x] UI complète FR, Swiss design, 9 pages
 - [x] Export ZIP (HTML SEO + JSON + README) pour upload FTP manuel
 - [x] **Publication GitHub** (2026-02-07) : push direct des fichiers HTML/JSON dans le repo du site via PAT — pour sites React/Vite hébergés sur Vercel/Netlify. Endpoints `/api/sites/{id}/test-github` et `/api/drafts/{id}/publish-github`. Dialogue de config par site avec test de connexion.
+- [x] **Google Search Console + Analytics (OAuth)** (2026-02-07) : OAuth 2.0 web-server flow avec refresh tokens, scopes `webmasters.readonly` + `analytics.readonly`. Endpoints `/api/google/login`, `/api/google/callback`, `/api/google/status`, `/api/google/disconnect`, `/api/google/gsc-sites`, `/api/sites/{id}/google-settings`, `/api/sites/{id}/performance-real`. Page Performance complètement refondue : sélection propriété GSC depuis liste + GA4 Property ID, affichage temps réel des impressions/clics/CTR/position + sessions/utilisateurs/bounce/conversions. Fallback automatique sur mock si pas connecté.
 
 ## Backlog / Phase 2 (P0)
-- [ ] OAuth Google → vraies données Google Search Console & Google Analytics
 - [ ] Vraie Wix App (App ID + Secret) via Wix Dev Center pour OAuth multi-comptes
-- [ ] Encryption at-rest des clés API (Wix, GitHub PAT, FTP) via Fernet ou KMS
+- [ ] Encryption at-rest des clés API (Wix, GitHub PAT, FTP, Google refresh_token) via Fernet ou KMS
 - [ ] Conversion markdown → Wix RichContent pour publication réelle des articles
-- [ ] Suivi automatique du classement par mot-clé (cron)
+- [ ] Suivi automatique du classement par mot-clé (cron sur l'historique GSC)
 - [ ] Détection de doublons inter-pages + indexation/sitemap analysis
 - [ ] Auto-mise à jour du `sitemap.xml` dans le repo lors d'un push GitHub
 
