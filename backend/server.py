@@ -1178,6 +1178,7 @@ class PageOptimizationResult(BaseModel):
     created_at: str
     applied: bool = False
     wix_updated: bool = False
+    draft_id: Optional[str] = None
 
 
 OPTIMIZER_SYSTEM = """Tu es expert SEO on-page senior français.
@@ -1309,10 +1310,13 @@ async def get_optimization(opt_id: str, user=Depends(get_current_user)):
 
 @api.post("/pages/optimizations/{opt_id}/apply", response_model=PageOptimizationResult)
 async def apply_optimization(opt_id: str, user=Depends(get_current_user)):
-    """Mark optimization as applied and create a corresponding draft for the new content."""
-    d = await db.page_optimizations.find_one({"id": opt_id, "user_id": user["id"]})
+    """Mark optimization as applied and create a corresponding draft for the new content.
+    Idempotent: re-calling returns the existing draft_id."""
+    d = await db.page_optimizations.find_one({"id": opt_id, "user_id": user["id"]}, {"_id": 0})
     if not d:
         raise HTTPException(404, "Optimisation introuvable")
+    if d.get("applied") and d.get("draft_id"):
+        return PageOptimizationResult(**{k: v for k, v in d.items() if k != "user_id"})
     suggested = d["suggested"] or {}
     # Build body markdown combining intro + outline + FAQ
     body_parts = []
@@ -1322,10 +1326,10 @@ async def apply_optimization(opt_id: str, user=Depends(get_current_user)):
         body_parts.append(suggested["content_outline"])
     faq = suggested.get("faq_suggested") or []
     if faq:
-        body_parts.append("\n\n## FAQ\n")
+        body_parts.append("## FAQ")
         for q in faq:
-            body_parts.append(f"\n### {q.get('question','')}\n{q.get('answer','')}\n")
-    body_md = "\n\n".join(body_parts)
+            body_parts.append(f"### {q.get('question','')}\n{q.get('answer','')}")
+    body_md = "\n\n".join(p.strip() for p in body_parts if p and p.strip())
 
     draft = {
         "id": gen_id(),

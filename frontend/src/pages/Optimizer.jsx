@@ -74,7 +74,7 @@ export default function Optimizer() {
       const { data } = await api.post(`/pages/optimizations/${result.id}/apply`);
       setResult(data);
       toast.success("Brouillon créé · prêt à publier");
-      navigate(`/drafts/${data.draft_id || ""}`.replace("/drafts/", "/drafts/"));
+      if (data.draft_id) navigate(`/drafts/${data.draft_id}`);
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Échec");
     }
