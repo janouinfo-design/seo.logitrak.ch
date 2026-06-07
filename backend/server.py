@@ -92,21 +92,25 @@ class AuthResponse(BaseModel):
 class SiteCreate(BaseModel):
     label: Literal["Logirent", "Logitime", "Autre"]
     name: str
-    site_type: Literal["wix", "url_crawl"] = "wix"
+    site_type: Literal["wix", "url_crawl", "vps_api"] = "wix"
     wix_site_id: Optional[str] = None
     wix_account_id: Optional[str] = None
     wix_api_key: Optional[str] = None
     base_url: Optional[str] = None
+    vps_api_url: Optional[str] = None  # e.g. https://api.logirent.ch
+    vps_api_token: Optional[str] = None  # shared secret
 
 
 class SiteUpdate(BaseModel):
     label: Optional[Literal["Logirent", "Logitime", "Autre"]] = None
     name: Optional[str] = None
-    site_type: Optional[Literal["wix", "url_crawl"]] = None
+    site_type: Optional[Literal["wix", "url_crawl", "vps_api"]] = None
     wix_site_id: Optional[str] = None
     wix_account_id: Optional[str] = None
     wix_api_key: Optional[str] = None
     base_url: Optional[str] = None
+    vps_api_url: Optional[str] = None
+    vps_api_token: Optional[str] = None
 
 
 class SitePublic(BaseModel):
@@ -117,7 +121,9 @@ class SitePublic(BaseModel):
     wix_site_id: Optional[str] = None
     wix_account_id: Optional[str] = None
     base_url: Optional[str] = None
+    vps_api_url: Optional[str] = None
     has_api_key: bool
+    has_vps_token: bool = False
     created_at: str
 
 
@@ -284,7 +290,9 @@ def site_to_public(site: dict) -> SitePublic:
         wix_site_id=site.get("wix_site_id"),
         wix_account_id=site.get("wix_account_id"),
         base_url=site.get("base_url"),
+        vps_api_url=site.get("vps_api_url"),
         has_api_key=bool(site.get("wix_api_key")),
+        has_vps_token=bool(site.get("vps_api_token")),
         created_at=site["created_at"],
     )
 
@@ -295,6 +303,9 @@ async def create_site(payload: SiteCreate, user=Depends(get_current_user)):
     if site_type == "wix":
         if not (payload.wix_site_id and payload.wix_account_id and payload.wix_api_key):
             raise HTTPException(422, "Pour un site Wix, wix_site_id, wix_account_id et wix_api_key sont requis.")
+    elif site_type == "vps_api":
+        if not (payload.base_url and payload.vps_api_url and payload.vps_api_token):
+            raise HTTPException(422, "Pour un site VPS API, base_url, vps_api_url et vps_api_token sont requis.")
     else:  # url_crawl
         if not payload.base_url:
             raise HTTPException(422, "Pour un site URL publique, base_url est requis.")
@@ -308,6 +319,8 @@ async def create_site(payload: SiteCreate, user=Depends(get_current_user)):
         "wix_account_id": (payload.wix_account_id or "").strip() or None,
         "wix_api_key": (payload.wix_api_key or "").strip() or None,
         "base_url": (payload.base_url or "").strip() or None,
+        "vps_api_url": (payload.vps_api_url or "").strip() or None,
+        "vps_api_token": (payload.vps_api_token or "").strip() or None,
         "created_at": now_iso(),
     }
     await db.sites.insert_one(site)
@@ -469,10 +482,15 @@ def _mock_pages(site: dict) -> List[dict]:
     ]
 
 
-async def crawl_public_site(site: dict, max_pages: int = 12) -> List[dict]:
-    """Crawl a public site by URL: try /sitemap.xml first, otherwise BFS from base_url.
+async def crawl_public_site(site: dict, max_pages: int = 12, render_js: bool = True) -> List[dict]:
+    """Crawl a public site by URL.
+    Strategy:
+      1. Try sitemap.xml for URL discovery
+      2. Otherwise BFS from base_url (also using rendered JS if render_js=True)
+      3. For each URL, fetch with httpx; if it looks like a SPA AND render_js=True, re-fetch with Playwright (headless Chromium) to see the JS-rendered content.
     Extracts per-page: title, meta description, H1/H2 list, word count, images_total, images_without_alt.
-    Pure scraping — no API needed. Detects SPA / client-rendered sites and flags them."""
+    Also detects the framework (Next.js / React CRA / Vite / Vue / static) and reports a `stack_hint`.
+    """
     base_url = (site.get("base_url") or "").rstrip("/")
     if not base_url:
         return []
@@ -485,7 +503,6 @@ async def crawl_public_site(site: dict, max_pages: int = 12) -> List[dict]:
     host = parsed.netloc
 
     def normalize(u: str) -> str:
-        # Strip URL fragments (#…) and trailing slashes
         u = u.split("#")[0].rstrip("/")
         return u or u
 
@@ -499,8 +516,21 @@ async def crawl_public_site(site: dict, max_pages: int = 12) -> List[dict]:
             seen.add(n)
             urls_to_visit.append(n)
 
-    async with httpx.AsyncClient(timeout=10, headers=headers, follow_redirects=True) as cli:
-        # 1. Sitemap
+    def detect_stack(raw_html: str) -> Optional[str]:
+        lower = raw_html.lower()
+        if "/_next/" in lower or '"__next"' in lower or '<div id="__next"' in lower:
+            return "Next.js"
+        if 'id="root"' in lower and "react" in lower[:8000]:
+            return "React (CRA / Vite)"
+        if "data-v-app" in lower or "vue" in lower[:5000]:
+            return "Vue.js"
+        if "/wp-content/" in lower or "wp-includes" in lower:
+            return "WordPress"
+        if "wix.com" in lower or "_wixCIDX" in lower:
+            return "Wix"
+        return None
+
+    async with httpx.AsyncClient(timeout=12, headers=headers, follow_redirects=True) as cli:
         try:
             r = await cli.get(f"{base_url}/sitemap.xml")
             if r.status_code == 200 and "xml" in r.headers.get("content-type", "").lower():
@@ -512,7 +542,7 @@ async def crawl_public_site(site: dict, max_pages: int = 12) -> List[dict]:
         except Exception as exc:
             logger.info("sitemap fetch failed for %s: %s", base_url, exc)
 
-        # 2. Fallback: BFS from home
+        # If no sitemap, BFS — but for SPA we may need playwright to extract links
         if not urls_to_visit:
             add_url(base_url)
             try:
@@ -524,10 +554,16 @@ async def crawl_public_site(site: dict, max_pages: int = 12) -> List[dict]:
                         add_url(full)
                         if len(urls_to_visit) >= max_pages:
                             break
+                    # If still very few URLs and content is small (SPA), use Playwright to discover links
+                    if render_js and len(urls_to_visit) <= 1:
+                        rendered_links = await _playwright_discover_links(base_url, host, max_pages)
+                        for u in rendered_links:
+                            add_url(u)
+                            if len(urls_to_visit) >= max_pages:
+                                break
             except Exception as exc:
                 logger.info("home crawl failed for %s: %s", base_url, exc)
 
-        # 3. Visit each URL
         results: List[dict] = []
         sem = asyncio.Semaphore(4)
 
@@ -538,13 +574,13 @@ async def crawl_public_site(site: dict, max_pages: int = 12) -> List[dict]:
                     if rr.status_code >= 400:
                         return None
                     raw_html = rr.text
+                    stack = detect_stack(raw_html)
                     soup = BeautifulSoup(raw_html, "lxml")
                     page_title = (soup.title.string or "").strip() if soup.title else ""
                     meta_desc_tag = soup.find("meta", attrs={"name": "description"})
                     meta_desc = (meta_desc_tag.get("content") or "").strip() if meta_desc_tag else None
                     h1s = [h.get_text(strip=True) for h in soup.find_all("h1") if h.get_text(strip=True)]
                     h2s = [h.get_text(strip=True) for h in soup.find_all("h2") if h.get_text(strip=True)]
-                    # Body text (strip non-content tags)
                     body_soup = BeautifulSoup(raw_html, "lxml")
                     for tag in body_soup(["script", "style", "noscript"]):
                         tag.decompose()
@@ -553,9 +589,25 @@ async def crawl_public_site(site: dict, max_pages: int = 12) -> List[dict]:
                     imgs = soup.find_all("img")
                     imgs_total = len(imgs)
                     imgs_no_alt = sum(1 for i in imgs if not (i.get("alt") or "").strip())
-                    # SPA detection: client-rendered apps often have <div id="root"> with very little body text
                     spa_markers = bool(soup.find(id=re.compile(r"^(root|app|__next)$"))) or "react" in raw_html.lower()[:5000]
                     is_spa = spa_markers and word_count < 100 and len(h1s) == 0
+
+                    # If SPA, re-fetch with Playwright to see real content
+                    rendered = False
+                    if is_spa and render_js:
+                        try:
+                            rendered_data = await _playwright_render_page(u)
+                            if rendered_data:
+                                rendered = True
+                                page_title = rendered_data.get("title") or page_title
+                                meta_desc = rendered_data.get("meta_description") or meta_desc
+                                h1s = rendered_data.get("h1") or h1s
+                                h2s = rendered_data.get("h2") or h2s
+                                word_count = max(word_count, rendered_data.get("word_count", 0))
+                                imgs_total = max(imgs_total, rendered_data.get("images_total", 0))
+                                imgs_no_alt = rendered_data.get("images_without_alt", imgs_no_alt)
+                        except Exception as exc:
+                            logger.info("playwright render failed for %s: %s", u, exc)
                     return {
                         "id": "crawl-" + str(abs(hash(u))),
                         "title": page_title or u,
@@ -568,6 +620,8 @@ async def crawl_public_site(site: dict, max_pages: int = 12) -> List[dict]:
                         "images_total": imgs_total,
                         "images_without_alt": imgs_no_alt,
                         "spa_detected": is_spa,
+                        "js_rendered": rendered,
+                        "stack_hint": stack,
                     }
                 except Exception as exc:
                     logger.info("crawl page failed %s: %s", u, exc)
@@ -580,10 +634,82 @@ async def crawl_public_site(site: dict, max_pages: int = 12) -> List[dict]:
         return results
 
 
+async def _playwright_discover_links(base_url: str, host: str, max_pages: int) -> List[str]:
+    """Render the base URL with headless Chromium and return internal links."""
+    try:
+        from playwright.async_api import async_playwright
+    except Exception:
+        return []
+    links: List[str] = []
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            try:
+                ctx = await browser.new_context(user_agent="LogiSEOBooster/1.0")
+                page = await ctx.new_page()
+                await page.goto(base_url, wait_until="networkidle", timeout=15000)
+                hrefs = await page.eval_on_selector_all("a[href]", "els => els.map(e => e.href)")
+                for h in hrefs:
+                    if urlparse(h).netloc == host and h not in links:
+                        links.append(h.split("#")[0].rstrip("/"))
+                        if len(links) >= max_pages:
+                            break
+            finally:
+                await browser.close()
+    except Exception as exc:
+        logger.info("playwright discover failed: %s", exc)
+    return links
+
+
+async def _playwright_render_page(url: str) -> Optional[dict]:
+    """Render a single URL with headless Chromium and extract SEO data after JS execution."""
+    try:
+        from playwright.async_api import async_playwright
+    except Exception:
+        return None
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            try:
+                ctx = await browser.new_context(user_agent="LogiSEOBooster/1.0")
+                page = await ctx.new_page()
+                await page.goto(url, wait_until="networkidle", timeout=15000)
+                await page.wait_for_timeout(800)  # allow late hydration
+                html = await page.content()
+            finally:
+                await browser.close()
+        soup = BeautifulSoup(html, "lxml")
+        title = (soup.title.string or "").strip() if soup.title else ""
+        meta_desc_tag = soup.find("meta", attrs={"name": "description"})
+        meta_desc = (meta_desc_tag.get("content") or "").strip() if meta_desc_tag else None
+        h1s = [h.get_text(strip=True) for h in soup.find_all("h1") if h.get_text(strip=True)]
+        h2s = [h.get_text(strip=True) for h in soup.find_all("h2") if h.get_text(strip=True)]
+        body = BeautifulSoup(html, "lxml")
+        for tag in body(["script", "style", "noscript"]):
+            tag.decompose()
+        text = body.get_text(" ", strip=True)
+        wc = len([w for w in re.split(r"\s+", text) if w])
+        imgs = soup.find_all("img")
+        imgs_no_alt = sum(1 for i in imgs if not (i.get("alt") or "").strip())
+        return {
+            "title": title or None,
+            "meta_description": meta_desc,
+            "h1": h1s,
+            "h2": h2s,
+            "word_count": wc,
+            "images_total": len(imgs),
+            "images_without_alt": imgs_no_alt,
+        }
+    except Exception as exc:
+        logger.info("playwright render error %s: %s", url, exc)
+        return None
+
+
 async def fetch_wix_pages(site: dict) -> List[dict]:
     """Dispatcher: routes to Wix API or URL crawl depending on site_type. Falls back to mock if both fail."""
     site_type = site.get("site_type", "wix")
-    if site_type == "url_crawl":
+    if site_type in ("url_crawl", "vps_api"):
+        # vps_api sites can also be crawled (same public URL)
         pages = await crawl_public_site(site)
         if pages:
             return pages
@@ -706,9 +832,20 @@ def _audit_page(page: dict) -> List[dict]:
     issues = []
     # SPA / client-rendered detection — critical for SEO
     if page.get("spa_detected"):
+        rendered_note = " (LOGI a pu lire le contenu grâce au rendu JS Playwright, mais Google ne le voit pas par défaut sans SSR/SSG/prerender)"
+        recommendation = (
+            "Activer le rendu côté serveur (SSR) ou la pré-génération statique (SSG), "
+            "ou utiliser un service de prerendering. Sans cela, le SEO est fortement "
+            "pénalisé même si le contenu visible côté utilisateur paraît correct."
+        )
+        if page.get("js_rendered"):
+            recommendation = (
+                "LOGI SEO Booster lit ce contenu via un crawler Playwright qui exécute le JS. "
+                "Mais Google et la plupart des IA ne font PAS cela par défaut. " + recommendation
+            )
         issues.append({"severity": "high", "category": "Rendu côté client",
-                       "message": "Page rendue côté client (SPA) — Google et les IA voient un HTML quasi vide",
-                       "recommendation": "Activer le rendu côté serveur (SSR) ou la pré-génération statique (SSG), ou utiliser un service de prerendering. Sans cela, le SEO est fortement pénalisé même si le contenu visible côté utilisateur paraît correct."})
+                       "message": "Page rendue côté client (SPA) — Google et les IA voient un HTML quasi vide" + rendered_note,
+                       "recommendation": recommendation})
     title = page.get("meta_title") or page.get("title") or ""
     desc = page.get("meta_description") or ""
     if not title:
@@ -1028,6 +1165,31 @@ async def rollback_draft(draft_id: str, version_id: str, user=Depends(get_curren
 # ---------------------------------------------------------------------------
 # Publish to Wix
 # ---------------------------------------------------------------------------
+async def publish_to_vps_api(site: dict, draft: dict) -> Optional[dict]:
+    """POST the draft content to the VPS mini-API. Returns the JSON response on success."""
+    url = (site.get("vps_api_url") or "").rstrip("/") + "/api/seo/publish"
+    token = site.get("vps_api_token") or ""
+    payload = {
+        "content_type": draft.get("content_type"),
+        "title": draft.get("title"),
+        "meta_title": draft.get("meta_title"),
+        "meta_description": draft.get("meta_description"),
+        "body_markdown": draft.get("body_markdown"),
+        "keywords": draft.get("keywords", []),
+        "faq": draft.get("faq", []),
+        "source": "logi-seo-booster",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20) as cli:
+            r = await cli.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=payload)
+        if r.status_code in (200, 201):
+            return r.json() if r.headers.get("content-type", "").startswith("application/json") else {"ok": True}
+        logger.warning("VPS API publish failed: %s %s", r.status_code, r.text[:200])
+    except Exception as exc:
+        logger.warning("VPS API publish error: %s", exc)
+    return None
+
+
 @api.post("/drafts/{draft_id}/publish", response_model=DraftPublic)
 async def publish_draft(draft_id: str, payload: PublishRequest, user=Depends(get_current_user)):
     d = await db.drafts.find_one({"id": draft_id, "user_id": user["id"]})
@@ -1037,6 +1199,7 @@ async def publish_draft(draft_id: str, payload: PublishRequest, user=Depends(get
 
     site_type = site.get("site_type", "wix")
     wix_draft_id: Optional[str] = None
+    vps_published_id: Optional[str] = None
     status_label: str
 
     if site_type == "wix":
@@ -1048,8 +1211,14 @@ async def publish_draft(draft_id: str, payload: PublishRequest, user=Depends(get
             seo_description=d.get("meta_description"),
         )
         status_label = "success" if wix_draft_id else "wix_unavailable"
+    elif site_type == "vps_api":
+        vps_resp = await publish_to_vps_api(site, d)
+        if vps_resp:
+            vps_published_id = vps_resp.get("id") or vps_resp.get("slug") or "published"
+            status_label = "vps_success"
+        else:
+            status_label = "vps_unavailable"
     else:
-        # URL crawl sites (Emergent-hosted etc.) — no API yet, mark as ready/exported.
         status_label = "ready_for_export"
 
     log_entry = {
@@ -1060,18 +1229,20 @@ async def publish_draft(draft_id: str, payload: PublishRequest, user=Depends(get
         "title": d["title"],
         "action": "publish_attempt",
         "wix_draft_id": wix_draft_id,
+        "vps_published_id": vps_published_id,
         "status": status_label,
         "site_type": site_type,
         "created_at": now_iso(),
     }
     await db.publish_logs.insert_one(log_entry)
 
+    is_published = bool(wix_draft_id or vps_published_id)
     updates = {
         "wix_draft_id": wix_draft_id,
-        "status": "published" if wix_draft_id else "ready",
+        "status": "published" if is_published else "ready",
         "updated_at": now_iso(),
     }
-    if wix_draft_id:
+    if is_published:
         updates["wix_published_at"] = now_iso()
     await db.drafts.update_one({"id": draft_id}, {"$set": updates})
     d = await db.drafts.find_one({"id": draft_id}, {"_id": 0})

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useSites } from "@/contexts/SiteContext";
 import PageHeader from "@/components/PageHeader";
-import { Plus, Trash2, ShieldCheck, KeyRound, Globe2, Zap } from "lucide-react";
+import { Plus, Trash2, ShieldCheck, KeyRound, Globe2, Zap, Download, Server } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -40,6 +40,8 @@ const empty = {
   wix_site_id: "",
   wix_account_id: "",
   wix_api_key: "",
+  vps_api_url: "",
+  vps_api_token: "",
 };
 
 export default function Sites() {
@@ -65,6 +67,10 @@ export default function Sites() {
         payload.wix_site_id = form.wix_site_id;
         payload.wix_account_id = form.wix_account_id;
         payload.wix_api_key = form.wix_api_key;
+      }
+      if (form.site_type === "vps_api") {
+        payload.vps_api_url = form.vps_api_url;
+        payload.vps_api_token = form.vps_api_token;
       }
       const { data } = await api.post("/sites", payload);
       toast.success(`${data.name} connecté`);
@@ -149,7 +155,7 @@ export default function Sites() {
                 </DialogHeader>
                 <form onSubmit={onSubmit} className="space-y-3.5" data-testid="add-site-form">
                   {/* Site type selector */}
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, site_type: "url_crawl" }))}
@@ -162,7 +168,21 @@ export default function Sites() {
                     >
                       <Globe2 className="w-4 h-4 text-[#002FA7] mb-1.5" />
                       <div className="text-xs font-semibold text-slate-950">URL publique</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">Emergent, WP, custom…</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">Lecture seule</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, site_type: "vps_api" }))}
+                      data-testid="site-type-vps-api"
+                      className={`p-3 border rounded-md text-left transition-all ${
+                        form.site_type === "vps_api"
+                          ? "border-[#002FA7] bg-blue-50/50 ring-2 ring-[#002FA7]/20"
+                          : "border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      <Server className="w-4 h-4 text-[#002FA7] mb-1.5" />
+                      <div className="text-xs font-semibold text-slate-950">VPS API</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">Logirent / Logitime</div>
                     </button>
                     <button
                       type="button"
@@ -213,6 +233,41 @@ export default function Sites() {
                       className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
                     />
                   </div>
+
+                  {form.site_type === "vps_api" && (
+                    <div className="border-t border-slate-100 pt-3.5 space-y-3.5">
+                      <div className="text-xs text-slate-600 bg-amber-50 border border-amber-200 rounded p-2.5">
+                        <strong>Kit Mini-API à déployer sur votre VPS :</strong>{" "}
+                        <a href="/logi-seo-vps-mini-api.zip" download className="text-[#002FA7] underline font-medium" data-testid="download-vps-kit">
+                          Télécharger le kit (.zip)
+                        </a>
+                        {" "}— suivez le README pour l&apos;installer en 5 minutes sur votre VPS.
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-700 mb-1.5 block">URL de l&apos;API VPS *</label>
+                        <input
+                          required={form.site_type === "vps_api"}
+                          data-testid="site-vps-api-url-input"
+                          value={form.vps_api_url}
+                          onChange={set("vps_api_url")}
+                          placeholder="https://api.logirent.ch"
+                          className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-700 mb-1.5 block">Token API (Bearer) *</label>
+                        <input
+                          required={form.site_type === "vps_api"}
+                          data-testid="site-vps-api-token-input"
+                          value={form.vps_api_token}
+                          onChange={set("vps_api_token")}
+                          type="password"
+                          placeholder="Valeur de SEO_API_TOKEN dans .env"
+                          className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {form.site_type === "wix" && (
                     <div className="border-t border-slate-100 pt-3.5 space-y-3.5">
@@ -314,7 +369,11 @@ export default function Sites() {
                   <div>
                     <div className="font-display font-semibold text-slate-950">{s.name}</div>
                     <div className="text-xs text-slate-500 flex items-center gap-1.5">
-                      {s.site_type === "url_crawl" ? (
+                      {s.site_type === "vps_api" ? (
+                        <>
+                          <Server className="w-3 h-3" /> VPS API · {s.label}
+                        </>
+                      ) : s.site_type === "url_crawl" ? (
                         <>
                           <Globe2 className="w-3 h-3" /> URL publique · {s.label}
                         </>
@@ -357,7 +416,24 @@ export default function Sites() {
               </div>
 
               <dl className="text-xs space-y-1.5">
-                {s.site_type === "url_crawl" ? (
+                {s.site_type === "vps_api" ? (
+                  <>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-500">URL site</dt>
+                      <dd className="text-slate-800 truncate max-w-[220px]">{s.base_url || "—"}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-500">URL API</dt>
+                      <dd className="font-mono text-slate-800 truncate max-w-[220px]">{s.vps_api_url || "—"}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-500">Token</dt>
+                      <dd className="flex items-center gap-1 text-[#16A34A]">
+                        <ShieldCheck className="w-3.5 h-3.5" /> {s.has_vps_token ? "Configuré" : "Manquant"}
+                      </dd>
+                    </div>
+                  </>
+                ) : s.site_type === "url_crawl" ? (
                   <>
                     <div className="flex justify-between gap-2">
                       <dt className="text-slate-500">URL</dt>
