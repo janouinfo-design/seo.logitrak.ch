@@ -1,0 +1,128 @@
+{
+  "project_name": "LOGI SEO Booster",
+  "theme": "light",
+  "archetype": "Swiss & High-Contrast",
+  "emotional_tone": "Professional, authoritative, data-driven, and highly precise. Designed for B2B real estate professionals who need a tool as serious as Ahrefs or Semrush.",
+  "typography": {
+    "heading_font": "Cabinet Grotesk",
+    "body_font": "IBM Plex Sans",
+    "rules": {
+      "h1": "text-4xl sm:text-5xl font-bold tracking-tighter text-slate-950",
+      "h2": "text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900",
+      "h3": "text-xl sm:text-2xl font-medium tracking-tight text-slate-900",
+      "h4": "text-lg sm:text-xl font-medium text-slate-800",
+      "body": "text-sm sm:text-base text-slate-700 leading-relaxed",
+      "labels_overlines": "text-xs font-semibold uppercase tracking-[0.15em] text-slate-500",
+      "data_numbers": "font-mono font-medium tracking-tight"
+    },
+    "font_install_instructions": "Add Cabinet Grotesk (from Fontshare or local assets) for headings, and Google Font 'IBM Plex Sans' for body text. Fallbacks: sans-serif for body."
+  },
+  "colors": {
+    "background": {
+      "app": "#FAFAFA",
+      "surface": "#FFFFFF",
+      "surface_hover": "#F1F5F9",
+      "sidebar": "#FFFFFF"
+    },
+    "text": {
+      "primary": "#020617",
+      "secondary": "#334155",
+      "muted": "#64748B",
+      "on_accent": "#FFFFFF"
+    },
+    "brand_accent": {
+      "primary": "#002FA7",
+      "primary_hover": "#001D6B",
+      "focus_ring": "rgba(0, 47, 167, 0.3)"
+    },
+    "functional": {
+      "success": "#16A34A",
+      "success_bg": "#DCFCE7",
+      "warning": "#D97706",
+      "warning_bg": "#FEF3C7",
+      "error": "#DC2626",
+      "error_bg": "#FEE2E2",
+      "neutral_border": "#E2E8F0"
+    },
+    "anti_patterns": [
+      "NO purple or teal gradients.",
+      "NO soft, fluffy drop shadows. Use hard 1px borders instead.",
+      "NO rounded-xl or rounded-2xl on main cards. Stick to rounded-sm or rounded-md."
+    ]
+  },
+  "layout_spacing": {
+    "grid_system": "MODE B: THE 'CONTROL ROOM' GRID",
+    "strategy": "High density, clear data correlation, highly scannable.",
+    "container_padding": "p-6 md:p-8",
+    "gap_strategy": "gap-4 md:gap-6",
+    "card_padding": "p-5 md:p-6",
+    "alignment": {
+      "general": "Left-align text and data. Right-align numeric columns in tables.",
+      "headers": "Left-align section headers with an adjacent overline."
+    }
+  },
+  "surface_styles": {
+    "dashboard_cards": {
+      "background": "bg-white",
+      "border": "border border-slate-200",
+      "shadow": "shadow-sm",
+      "radius": "rounded-md",
+      "hover_state": "hover:border-slate-300 hover:shadow transition-all duration-200"
+    },
+    "header_nav": {
+      "style": "Solid background with a hard bottom border.",
+      "classes": "bg-white border-b border-slate-200 z-50"
+    },
+    "data_tables": {
+      "header": "bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider",
+      "row": "border-b border-slate-100 hover:bg-slate-50 transition-colors"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#002FA7] text-white hover:bg-[#001D6B] rounded-md px-4 py-2 font-medium transition-colors shadow-sm",
+      "secondary": "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 rounded-md px-4 py-2 font-medium transition-colors shadow-sm",
+      "ghost": "bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-md px-4 py-2 font-medium transition-colors"
+    },
+    "inputs": {
+      "default": "border border-slate-300 rounded-md px-3 py-2 bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7] transition-all"
+    },
+    "shadcn_overrides": [
+      "Override default Card component to use `rounded-md`, `border-slate-200`, and `shadow-sm` instead of larger default radii/shadows.",
+      "For Data Tables, strictly use right alignment for all numeric/metric columns.",
+      "Tabs: Use a minimal underline style instead of the default pill/button style for a more professional SaaS look."
+    ]
+  },
+  "motion_interactions": {
+    "hover": "Subtle border color shifts (slate-200 to slate-300) and slight background tints. No extreme scaling or floating.",
+    "transitions": "transition-all duration-200 ease-in-out",
+    "loaders": "Linear progress bars or minimal spinners in brand accent color."
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "style": "Weight 'regular' or 'bold' for active states. Size 20px (w-5 h-5) for standard use, 16px (w-4 h-4) for dense data rows.",
+    "install_command": "yarn add @phosphor-icons/react"
+  },
+  "media": {
+    "images": [
+      {
+        "category": "auth_background",
+        "description": "Abstract white geometric background for the login/registration split screen side.",
+        "url": "https://images.unsplash.com/photo-1637625854255-d893202554f4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMHdoaXRlJTIwZ2VvbWV0cmljJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODA4MjQ2MzZ8MA&ixlib=rb-4.1.0&q=85"
+      }
+    ],
+    "rules": "No placeholder URLs. For avatars, use initial-based colored circles."
+  },
+  "accessibility": {
+    "contrast": "Ensure all text against white/grey backgrounds passes WCAG AA (minimum 4.5:1). Functional colors (red/green) must be legible against white.",
+    "testing_attributes": "All interactive elements (buttons, links, form inputs, metric cards) MUST have `data-testid` attributes (e.g., `data-testid=\"site-selector-dropdown\"`)."
+  },
+  "instructions_to_main_agent": [
+    "Build the dashboard using a 'Control Room' approach. Rely heavily on Grid layouts (`grid-cols-1 md:grid-cols-4`).",
+    "Ensure the Sidebar navigation visually separates the active 'Logirent' or 'Logitime' context. A dropdown context switcher should be prominent at the top of the sidebar.",
+    "Implement the 'Vue Performance' mock with Recharts, using high-contrast colors (#002FA7 for impressions, #16A34A for clicks).",
+    "Do NOT use HTML `<select>` or `<input type=\"date\">`. Rely completely on customized Shadcn Select, Dialog, and Calendar primitives.",
+    "Keep spacing structured but not fluffy. Use `p-6` for main containers, tight `gap-4` between widgets.",
+    "Use French language strictly for all UI text."
+  ]
+}
