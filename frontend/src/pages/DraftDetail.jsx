@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { api, API } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
-import { Save, Send, ArrowLeft, History, Eye, Pencil, CheckCircle2, AlertCircle, Loader2, X, Download, FileCode, Github, ExternalLink } from "lucide-react";
+import { Save, Send, ArrowLeft, History, Eye, Pencil, CheckCircle2, AlertCircle, Loader2, X, Download, FileCode, Github, ExternalLink, Linkedin } from "lucide-react";
 import { useSites } from "@/contexts/SiteContext";
 import {
   AlertDialog,
@@ -71,10 +71,17 @@ export default function DraftDetail() {
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishingGh, setPublishingGh] = useState(false);
+  const [publishingLi, setPublishingLi] = useState(false);
+  const [liStatus, setLiStatus] = useState(null);
   const [versions, setVersions] = useState([]);
 
   const draftSite = sites.find((s) => s.id === draft?.site_id);
   const ghReady = !!draftSite?.has_github_token;
+
+  // Load LinkedIn status once
+  useEffect(() => {
+    api.get("/linkedin/status").then(({ data }) => setLiStatus(data)).catch(() => {});
+  }, []);
 
   const load = async () => {
     const { data } = await api.get(`/drafts/${id}`);
@@ -136,6 +143,31 @@ export default function DraftDetail() {
       toast.error(err?.response?.data?.detail || "Échec du push GitHub");
     } finally {
       setPublishingGh(false);
+    }
+  };
+
+  const connectLinkedIn = async () => {
+    try {
+      const { data } = await api.get("/linkedin/login");
+      window.location.href = data.authorization_url;
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Échec de connexion LinkedIn");
+    }
+  };
+
+  const onPublishLinkedIn = async () => {
+    setPublishingLi(true);
+    try {
+      const { data } = await api.post(`/drafts/${id}/publish-linkedin`);
+      toast.success("Publié sur LinkedIn ✓", {
+        description: data.article_url ? "Avec aperçu de l'article" : "Post texte",
+        action: data.post_url ? { label: "Voir le post", onClick: () => window.open(data.post_url, "_blank") } : undefined,
+      });
+      load();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Échec du post LinkedIn");
+    } finally {
+      setPublishingLi(false);
     }
   };
 
@@ -260,6 +292,54 @@ export default function DraftDetail() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            {liStatus?.server_configured && (
+              liStatus.connected ? (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button
+                      data-testid="draft-publish-linkedin-button"
+                      disabled={publishingLi}
+                      title={`Publier sur LinkedIn (connecté : ${liStatus.name || liStatus.email})`}
+                      className="inline-flex items-center gap-2 bg-[#0A66C2] hover:bg-[#004182] disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
+                    >
+                      {publishingLi ? <Loader2 className="w-4 h-4 animate-spin" /> : <Linkedin className="w-4 h-4" />}
+                      Publier sur LinkedIn
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="flex items-center gap-2"><Linkedin className="w-5 h-5 text-[#0A66C2]" /> Publier sur LinkedIn ?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Claude va générer automatiquement un post LinkedIn pro (800-1300 caractères) à partir de votre article et le publier sur votre profil <strong>{liStatus.name || liStatus.email}</strong>.
+                        {draft?.github_public_url && <><br /><br />✅ L&apos;article sera lié à <code className="text-xs bg-slate-100 px-1 rounded">{draft.github_public_url}</code> avec aperçu automatique.</>}
+                        {!draft?.github_public_url && <><br /><br />⚠️ Cet article n&apos;est pas encore publié sur GitHub — le post LinkedIn n&apos;aura pas d&apos;aperçu d&apos;article. Publiez d&apos;abord sur GitHub pour un meilleur engagement.</>}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Annuler</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={onPublishLinkedIn}
+                        disabled={publishingLi}
+                        data-testid="draft-publish-linkedin-confirm"
+                        className="bg-[#0A66C2] hover:bg-[#004182]"
+                      >
+                        {publishingLi ? "Publication…" : "Publier maintenant"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              ) : (
+                <button
+                  onClick={connectLinkedIn}
+                  data-testid="draft-connect-linkedin-button"
+                  title="Connecter votre compte LinkedIn pour activer la publication automatique"
+                  className="inline-flex items-center gap-2 bg-white border border-[#0A66C2] hover:bg-[#0A66C2]/5 text-[#0A66C2] px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                >
+                  <Linkedin className="w-4 h-4" />
+                  Connecter LinkedIn
+                </button>
+              )
+            )}
             <button
               onClick={onSave}
               disabled={saving}
@@ -316,6 +396,18 @@ export default function DraftDetail() {
           {draft.github_public_url && (
             <a href={draft.github_public_url} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-[#002FA7] hover:underline text-xs">
               <ExternalLink className="w-3 h-3" /> Voir la page publique
+            </a>
+          )}
+        </div>
+      )}
+
+      {draft.linkedin_post_urn && (
+        <div className="mb-5 p-3 border border-[#0A66C2]/20 bg-[#0A66C2]/5 rounded-md flex items-center gap-2 text-sm text-[#004182]" data-testid="draft-linkedin-confirmation">
+          <Linkedin className="w-4 h-4 text-[#0A66C2] flex-shrink-0" />
+          <span>Publié sur LinkedIn · {draft.linkedin_posted_at && new Date(draft.linkedin_posted_at).toLocaleString("fr-FR")}</span>
+          {draft.linkedin_post_url && (
+            <a href={draft.linkedin_post_url} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-[#0A66C2] hover:underline text-xs">
+              <ExternalLink className="w-3 h-3" /> Voir le post
             </a>
           )}
         </div>

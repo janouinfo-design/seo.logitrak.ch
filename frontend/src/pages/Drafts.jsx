@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useSites } from "@/contexts/SiteContext";
@@ -55,6 +56,15 @@ export default function Drafts() {
   };
 
   useEffect(() => { load(); }, [activeSite?.id]);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("linkedin") === "connected") {
+      toast.success("Compte LinkedIn connecté ✓");
+      searchParams.delete("linkedin");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const remove = async (id) => {
     try {
