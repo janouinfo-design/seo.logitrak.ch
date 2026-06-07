@@ -43,6 +43,7 @@ export default function Generator() {
     tone: "professionnel",
     target_length: "moyen",
     extra_instructions: "",
+    auto_publish_github: false,
   });
   const [loading, setLoading] = useState(false);
 
@@ -83,7 +84,6 @@ export default function Generator() {
     if (!form.topic.trim()) return toast.error("Indiquez un sujet");
     setLoading(true);
     try {
-      // Start async job
       const { data: job } = await api.post("/content/generate-async", {
         site_id: activeSite.id,
         content_type: form.content_type,
@@ -97,24 +97,42 @@ export default function Generator() {
       const jobId = job.job_id;
       toast.info("Génération en cours… (peut prendre 1-3 minutes)");
 
-      // Poll every 3 seconds for up to 5 minutes
       const maxAttempts = 100;
       let attempts = 0;
+      let draft = null;
       while (attempts < maxAttempts) {
         await new Promise((r) => setTimeout(r, 3000));
         attempts++;
         const { data: status } = await api.get(`/content/jobs/${jobId}`);
         if (status.status === "completed") {
+          draft = status.result;
           toast.success("Contenu généré ✨");
-          navigate(`/drafts/${status.result.id}`);
-          return;
+          break;
         }
         if (status.status === "failed") {
           throw new Error(status.error || "Erreur de génération");
         }
-        // still pending → continue
       }
-      throw new Error("Génération trop longue (>5 min). Réessayez avec un sujet plus court.");
+      if (!draft) {
+        throw new Error("Génération trop longue (>5 min). Réessayez avec un sujet plus court.");
+      }
+
+      // Auto-publish to GitHub if enabled and site has GitHub configured
+      if (form.auto_publish_github && activeSite.has_github_token) {
+        toast.info("Publication automatique sur GitHub…");
+        try {
+          const { data: pub } = await api.post(`/drafts/${draft.id}/publish-github`);
+          toast.success(`Publié sur ${pub.public_url || "GitHub"} ✓`, {
+            action: pub.commit_url ? { label: "Voir commit", onClick: () => window.open(pub.commit_url, "_blank") } : undefined,
+          });
+        } catch (pubErr) {
+          toast.error("Génération OK, mais push GitHub a échoué : " + (pubErr?.response?.data?.detail || pubErr?.message));
+        }
+      } else if (form.auto_publish_github && !activeSite.has_github_token) {
+        toast.warning("Auto-publication ignorée : GitHub n'est pas configuré sur ce site");
+      }
+
+      navigate(`/drafts/${draft.id}`);
     } catch (err) {
       toast.error(err?.response?.data?.detail || err?.message || "Erreur de génération");
     } finally {
@@ -237,6 +255,25 @@ export default function Generator() {
               className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7] resize-none"
             />
           </div>
+
+          <label className={`flex items-start gap-3 p-3 border rounded-md cursor-pointer transition-colors ${form.auto_publish_github ? "border-[#002FA7] bg-[#002FA7]/5" : "border-slate-200 hover:border-slate-300"}`}>
+            <input
+              type="checkbox"
+              data-testid="gen-auto-publish-github"
+              checked={form.auto_publish_github}
+              onChange={(e) => setForm((f) => ({ ...f, auto_publish_github: e.target.checked }))}
+              className="mt-0.5 w-4 h-4 accent-[#002FA7]"
+              disabled={!activeSite?.has_github_token}
+            />
+            <div className="flex-1">
+              <div className="text-sm font-medium text-slate-900">⚡ Publier automatiquement sur GitHub après génération</div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                {activeSite?.has_github_token
+                  ? <>Push direct sur <code className="text-[11px] bg-white px-1 rounded">{activeSite.github_owner}/{activeSite.github_repo}</code>. Plus besoin de cliquer "Publier" manuellement.</>
+                  : <>GitHub n&apos;est pas configuré sur ce site. Configurez-le dans la page Sites pour activer cette option.</>}
+              </div>
+            </div>
+          </label>
 
           <div className="flex items-center justify-between pt-2 border-t border-slate-100">
             <div className="text-xs text-slate-500 flex items-center gap-1.5">

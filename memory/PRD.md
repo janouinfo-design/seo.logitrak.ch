@@ -50,10 +50,14 @@ le classement Google et la visibilité dans les IA (ChatGPT, Gemini, Perplexity,
 - [x] **Auto-update sitemap.xml sur push GitHub** (2026-02-07) : lors d'un `/drafts/{id}/publish-github`, le sitemap est lu, mis à jour (lastmod) ou créé en y ajoutant l'URL de la nouvelle page. Recherche le sitemap dans `folder/sitemap.xml`, `public/sitemap.xml` puis `sitemap.xml`.
 - [x] **Chiffrement Fernet at-rest** (2026-02-07) : tous les tokens sensibles (`wix_api_key`, `ftp_password`, `vps_api_token`, `github_token`, `google_oauth.refresh_token` + `access_token`) chiffrés via Fernet avant insertion en MongoDB. Préfixe `enc::` pour permettre la migration progressive (legacy plaintext toujours lisible). `ENCRYPTION_KEY` dans `backend/.env`.
 - [x] **Détection de doublons inter-pages** (2026-02-07) : endpoint `POST /api/sites/{id}/duplicate-scan` qui calcule la similarité Jaccard sur bigrams normalisés (titre + meta + body) entre toutes les pages du site + détecte les titres H1 et meta descriptions exactement identiques. Bouton "Détecter doublons" sur la page Audit avec panneau de résultats (paires similaires colorées par sévérité, groupes de titres/metas dupliqués, recommandations IA).
+- [x] **Génération asynchrone (jobs)** (2026-02-07) : nouveau endpoint `POST /api/content/generate-async` + `GET /api/content/jobs/{id}` pour bypasser le timeout 60s de l'ingress K8s. Frontend Generator.jsx fait du polling toutes les 3s avec toast "Génération en cours…". Plus de timeout possible.
+- [x] **Auto-publish GitHub depuis le Générateur** (2026-02-07) : checkbox "⚡ Publier automatiquement sur GitHub après génération" dans la page Générateur. Quand cochée + site avec GitHub configuré → la génération auto-push le brouillon. Désactivée + grisée si GitHub pas configuré.
 
 ## Backlog / Phase 2 (P0)
+- [ ] Génération en lot : page batch pour générer 10-20 articles d'un coup (Niveau 2)
+- [ ] Calendrier éditorial : cron auto-génère + auto-publie 1 article tous les X jours (Niveau 3)
+- [ ] LinkedIn auto-posting : OAuth + UGC Post API (playbook récupéré, prêt à implémenter)
 - [ ] Vraie Wix App (App ID + Secret) via Wix Dev Center pour OAuth multi-comptes
-- [ ] Conversion markdown → Wix RichContent pour publication réelle des articles
 - [ ] Alerte email auto si une page tracée chute de >5 positions sur Google
 
 ## Backlog / Phase 3 (P1)
