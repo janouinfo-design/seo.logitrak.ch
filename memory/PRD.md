@@ -46,14 +46,14 @@ le classement Google et la visibilité dans les IA (ChatGPT, Gemini, Perplexity,
 - [x] Export ZIP (HTML SEO + JSON + README) pour upload FTP manuel
 - [x] **Publication GitHub** (2026-02-07) : push direct des fichiers HTML/JSON dans le repo du site via PAT — pour sites React/Vite hébergés sur Vercel/Netlify. Endpoints `/api/sites/{id}/test-github` et `/api/drafts/{id}/publish-github`. Dialogue de config par site avec test de connexion.
 - [x] **Google Search Console + Analytics (OAuth)** (2026-02-07) : OAuth 2.0 web-server flow avec refresh tokens, scopes `webmasters.readonly` + `analytics.readonly`. Endpoints `/api/google/login`, `/api/google/callback`, `/api/google/status`, `/api/google/disconnect`, `/api/google/gsc-sites`, `/api/sites/{id}/google-settings`, `/api/sites/{id}/performance-real`. Page Performance complètement refondue : sélection propriété GSC depuis liste + GA4 Property ID, affichage temps réel des impressions/clics/CTR/position + sessions/utilisateurs/bounce/conversions. Fallback automatique sur mock si pas connecté.
+- [x] **Suivi de classement par mot-clé** (2026-02-07) : snapshots quotidiens auto à 04:00 UTC via APScheduler. Endpoints `/api/sites/{id}/rank-snapshot` (manuel) et `/api/sites/{id}/rank-tracking` (séries temporelles). Bouton "Capturer maintenant" + tableau Δ position vs début dans la page Performance.
+- [x] **Auto-update sitemap.xml sur push GitHub** (2026-02-07) : lors d'un `/drafts/{id}/publish-github`, le sitemap est lu, mis à jour (lastmod) ou créé en y ajoutant l'URL de la nouvelle page. Recherche le sitemap dans `folder/sitemap.xml`, `public/sitemap.xml` puis `sitemap.xml`.
+- [x] **Chiffrement Fernet at-rest** (2026-02-07) : tous les tokens sensibles (`wix_api_key`, `ftp_password`, `vps_api_token`, `github_token`, `google_oauth.refresh_token` + `access_token`) chiffrés via Fernet avant insertion en MongoDB. Préfixe `enc::` pour permettre la migration progressive (legacy plaintext toujours lisible). `ENCRYPTION_KEY` dans `backend/.env`.
 
 ## Backlog / Phase 2 (P0)
 - [ ] Vraie Wix App (App ID + Secret) via Wix Dev Center pour OAuth multi-comptes
-- [ ] Encryption at-rest des clés API (Wix, GitHub PAT, FTP, Google refresh_token) via Fernet ou KMS
 - [ ] Conversion markdown → Wix RichContent pour publication réelle des articles
-- [ ] Suivi automatique du classement par mot-clé (cron sur l'historique GSC)
 - [ ] Détection de doublons inter-pages + indexation/sitemap analysis
-- [ ] Auto-mise à jour du `sitemap.xml` dans le repo lors d'un push GitHub
 
 ## Backlog / Phase 3 (P1)
 - [ ] Comparateur de versions visuel (diff)

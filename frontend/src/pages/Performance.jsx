@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useSites } from "@/contexts/SiteContext";
 import PageHeader from "@/components/PageHeader";
-import { Info, Link as LinkIcon, Loader2, CheckCircle2, Settings2, LogOut, ExternalLink } from "lucide-react";
+import { Info, Link as LinkIcon, Loader2, CheckCircle2, Settings2, LogOut, ExternalLink, Camera, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { toast } from "sonner";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -257,6 +257,10 @@ export default function Performance() {
         <PerformanceData data={data} mode={data._mode} />
       )}
 
+      {isConnected && siteHasGoogleConfig && (
+        <RankTrackingSection siteId={activeSite.id} />
+      )}
+
       {/* Configuration dialog */}
       <Dialog open={configOpen} onOpenChange={setConfigOpen}>
         <DialogContent className="max-w-lg" data-testid="performance-config-dialog">
@@ -436,6 +440,103 @@ function Stat({ label, value, color = "text-slate-950", testId }) {
       <div className="overline mb-3">{label}</div>
       <div className={`font-mono text-3xl font-semibold ${color}`}>{value}</div>
       <div className="text-xs text-slate-500 mt-2">28 derniers jours</div>
+    </div>
+  );
+}
+
+function RankTrackingSection({ siteId }) {
+  const [tracking, setTracking] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [snapshotting, setSnapshotting] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/sites/${siteId}/rank-tracking?days=30&top=20`);
+      setTracking(data);
+    } catch {
+      setTracking(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [siteId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const takeSnapshot = async () => {
+    setSnapshotting(true);
+    try {
+      const { data } = await api.post(`/sites/${siteId}/rank-snapshot`);
+      toast.success(`Snapshot capturé · ${data.count} mots-clés (${data.snapshot_date})`);
+      await load();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Échec du snapshot");
+    } finally {
+      setSnapshotting(false);
+    }
+  };
+
+  const trendIcon = (t) => {
+    if (t === "up") return <TrendingUp className="w-3.5 h-3.5 text-[#16A34A]" />;
+    if (t === "down") return <TrendingDown className="w-3.5 h-3.5 text-[#DC2626]" />;
+    return <Minus className="w-3.5 h-3.5 text-slate-400" />;
+  };
+
+  return (
+    <div className="mt-8 border border-slate-200 bg-white rounded-md overflow-hidden" data-testid="rank-tracking-section">
+      <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
+        <div>
+          <div className="overline">Suivi de classement</div>
+          <div className="text-xs text-slate-500 mt-1">
+            {tracking?.snapshots_count > 0
+              ? `${tracking.snapshots_count} snapshots · dernier le ${tracking.latest_date}`
+              : "Aucun snapshot — capture quotidienne automatique à 04:00 UTC ou cliquez sur Capturer maintenant"}
+          </div>
+        </div>
+        <button
+          onClick={takeSnapshot}
+          disabled={snapshotting}
+          data-testid="rank-snapshot-button"
+          className="inline-flex items-center gap-2 bg-[#002FA7] hover:bg-[#001D6B] disabled:opacity-60 text-white px-4 py-2 rounded-md text-sm font-medium shadow-sm"
+        >
+          {snapshotting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+          Capturer maintenant
+        </button>
+      </div>
+      {loading ? (
+        <div className="p-6 text-sm text-slate-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Chargement…</div>
+      ) : !tracking || tracking.keywords.length === 0 ? (
+        <div className="p-8 text-center text-sm text-slate-500">
+          Aucun mot-clé suivi pour le moment. Cliquez sur <strong>Capturer maintenant</strong> pour démarrer le suivi.
+        </div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="border-b border-slate-100 bg-slate-50">
+            <tr>
+              <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Mot-clé</th>
+              <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Pos. actuelle</th>
+              <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Δ vs début</th>
+              <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Clics</th>
+              <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Impr.</th>
+              <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Tend.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tracking.keywords.map((k, i) => (
+              <tr key={i} className="border-b border-slate-100">
+                <td className="px-4 py-2.5 text-slate-900">{k.keyword}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-slate-900">{k.current_position}</td>
+                <td className={`px-4 py-2.5 text-right font-mono ${k.delta > 0 ? "text-emerald-700" : k.delta < 0 ? "text-red-700" : "text-slate-500"}`}>
+                  {k.delta > 0 ? `+${k.delta}` : k.delta}
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono text-slate-900">{k.current_clicks}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-slate-700">{k.current_impressions?.toLocaleString("fr-FR")}</td>
+                <td className="px-4 py-2.5 text-right"><div className="inline-flex">{trendIcon(k.trend)}</div></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

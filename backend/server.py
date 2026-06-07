@@ -44,6 +44,50 @@ JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "168"))
 EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
 
+# ---------------------------------------------------------------------------
+# Encryption at-rest for sensitive tokens (Fernet)
+# ---------------------------------------------------------------------------
+from cryptography.fernet import Fernet, InvalidToken
+
+_ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "")
+_fernet: Optional[Fernet] = None
+if _ENCRYPTION_KEY:
+    try:
+        _fernet = Fernet(_ENCRYPTION_KEY.encode())
+    except Exception as exc:
+        logging.getLogger(__name__).error("Invalid ENCRYPTION_KEY: %s — encryption disabled", exc)
+        _fernet = None
+
+_ENC_PREFIX = "enc::"
+
+
+def enc(value: Optional[str]) -> Optional[str]:
+    """Encrypt a string value. Returns ciphertext prefixed with 'enc::'. Idempotent (already-encrypted → returned as-is). None → None."""
+    if value is None or value == "":
+        return value
+    if not _fernet:
+        return value  # graceful fallback if not configured
+    if isinstance(value, str) and value.startswith(_ENC_PREFIX):
+        return value
+    try:
+        return _ENC_PREFIX + _fernet.encrypt(value.encode()).decode()
+    except Exception:
+        return value
+
+
+def dec(value: Optional[str]) -> Optional[str]:
+    """Decrypt a value previously encrypted by enc(). If not encrypted (no prefix), return as-is (legacy plaintext)."""
+    if value is None or value == "":
+        return value
+    if not isinstance(value, str) or not value.startswith(_ENC_PREFIX):
+        return value
+    if not _fernet:
+        return value
+    try:
+        return _fernet.decrypt(value[len(_ENC_PREFIX):].encode()).decode()
+    except (InvalidToken, Exception):
+        return value
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -376,17 +420,17 @@ async def create_site(payload: SiteCreate, user=Depends(get_current_user)):
         "site_type": site_type,
         "wix_site_id": (payload.wix_site_id or "").strip() or None,
         "wix_account_id": (payload.wix_account_id or "").strip() or None,
-        "wix_api_key": (payload.wix_api_key or "").strip() or None,
+        "wix_api_key": enc((payload.wix_api_key or "").strip()) or None,
         "base_url": (payload.base_url or "").strip() or None,
         "vps_api_url": (payload.vps_api_url or "").strip() or None,
-        "vps_api_token": (payload.vps_api_token or "").strip() or None,
+        "vps_api_token": enc((payload.vps_api_token or "").strip()) or None,
         "ftp_host": (payload.ftp_host or "").strip() or None,
         "ftp_port": payload.ftp_port or 21,
         "ftp_user": (payload.ftp_user or "").strip() or None,
-        "ftp_password": payload.ftp_password or None,
+        "ftp_password": enc(payload.ftp_password) or None,
         "ftp_remote_path": (payload.ftp_remote_path or "").strip() or None,
         "ftp_public_url": (payload.ftp_public_url or "").strip() or None,
-        "github_token": (payload.github_token or "").strip() or None,
+        "github_token": enc((payload.github_token or "").strip()) or None,
         "github_owner": (payload.github_owner or "").strip() or None,
         "github_repo": (payload.github_repo or "").strip() or None,
         "github_branch": (payload.github_branch or "main").strip() or "main",
@@ -418,6 +462,10 @@ async def update_site(site_id: str, payload: SiteUpdate, user=Depends(get_curren
     if not site:
         raise HTTPException(404, "Site introuvable")
     updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    # Encrypt sensitive fields before persisting
+    for sensitive in ("wix_api_key", "vps_api_token", "ftp_password", "github_token"):
+        if sensitive in updates and updates[sensitive]:
+            updates[sensitive] = enc(updates[sensitive])
     if updates:
         await db.sites.update_one({"id": site_id}, {"$set": updates})
     site = await db.sites.find_one({"id": site_id}, {"_id": 0})
@@ -478,7 +526,7 @@ async def _get_user_site(site_id: str, user: dict) -> dict:
 # ---------------------------------------------------------------------------
 def wix_headers(site: dict) -> Dict[str, str]:
     return {
-        "Authorization": site["wix_api_key"],
+        "Authorization": dec(site["wix_api_key"]),
         "wix-account-id": site["wix_account_id"],
         "wix-site-id": site["wix_site_id"],
         "Content-Type": "application/json",
@@ -1239,7 +1287,7 @@ async def rollback_draft(draft_id: str, version_id: str, user=Depends(get_curren
 async def publish_to_vps_api(site: dict, draft: dict) -> Optional[dict]:
     """POST the draft content to the VPS mini-API. Returns the JSON response on success."""
     url = (site.get("vps_api_url") or "").rstrip("/") + "/api/seo/publish"
-    token = site.get("vps_api_token") or ""
+    token = dec(site.get("vps_api_token")) or ""
     payload = {
         "content_type": draft.get("content_type"),
         "title": draft.get("title"),
@@ -1389,7 +1437,7 @@ async def publish_to_ftp(site: dict, draft: dict) -> Optional[dict]:
     host = site.get("ftp_host")
     port = site.get("ftp_port") or 21
     user = site.get("ftp_user")
-    pwd = site.get("ftp_password")
+    pwd = dec(site.get("ftp_password"))
     remote_path = (site.get("ftp_remote_path") or "/").rstrip("/") + "/"
     if not all((host, user, pwd, remote_path)):
         return None
@@ -1448,7 +1496,7 @@ async def test_ftp_connection(site_id: str, user=Depends(get_current_user)):
     def _do_test() -> dict:
         ftp = FTP()
         ftp.connect(site["ftp_host"], site.get("ftp_port") or 21, timeout=10)
-        ftp.login(site["ftp_user"], site["ftp_password"])
+        ftp.login(site["ftp_user"], dec(site["ftp_password"]))
         try:
             ftp.cwd(site.get("ftp_remote_path") or "/")
             cwd = ftp.pwd()
@@ -1531,7 +1579,7 @@ async def _github_put_file(
 async def test_github_connection(site_id: str, user=Depends(get_current_user)):
     """Verify GitHub PAT + repo + branch are valid by listing the target folder."""
     site = await _get_user_site(site_id, user)
-    token = site.get("github_token")
+    token = dec(site.get("github_token"))
     owner = site.get("github_owner")
     repo = site.get("github_repo")
     branch = site.get("github_branch") or "main"
@@ -1597,7 +1645,7 @@ async def publish_draft_to_github(draft_id: str, user=Depends(get_current_user))
     if not d:
         raise HTTPException(404, "Brouillon introuvable")
     site = await db.sites.find_one({"id": d["site_id"], "user_id": user["id"]}, {"_id": 0}) or {}
-    token = site.get("github_token")
+    token = dec(site.get("github_token"))
     owner = site.get("github_owner")
     repo = site.get("github_repo")
     branch = site.get("github_branch") or "main"
@@ -1625,12 +1673,22 @@ async def publish_draft_to_github(draft_id: str, user=Depends(get_current_user))
     commit_msg = f"LOGI SEO: publish {slug} ({d.get('content_type','article')})"
 
     results = []
+    sitemap_result = None
     async with httpx.AsyncClient(timeout=30.0) as client:
         for path, content in ((html_path, html_str), (json_path, json_str)):
             existing_sha = await _github_get_file_sha(client, token, owner, repo, path, branch)
             res = await _github_put_file(client, token, owner, repo, path, branch, commit_msg, content, existing_sha)
             res["updated"] = existing_sha is not None
             results.append(res)
+        # Update sitemap.xml if public URL is configured
+        public_base = (site.get("github_public_url") or "").rstrip("/")
+        if public_base:
+            page_url = f"{public_base}/{slug}.html"
+            try:
+                sitemap_result = await _github_update_sitemap(client, token, owner, repo, branch, folder, page_url, slug)
+            except Exception as exc:
+                logger.warning("Sitemap update failed: %s", exc)
+                sitemap_result = {"error": str(exc)}
 
     # Update draft status
     public_base = (site.get("github_public_url") or "").rstrip("/")
@@ -1647,10 +1705,78 @@ async def publish_draft_to_github(draft_id: str, user=Depends(get_current_user))
     return {
         "ok": True,
         "files": results,
+        "sitemap": sitemap_result,
         "public_url": public_url,
         "commit_sha": results[0].get("commit_sha"),
         "commit_url": results[0].get("commit_url"),
     }
+
+
+async def _github_update_sitemap(client, token, owner, repo, branch, folder, page_url, slug):
+    """Add page_url to sitemap.xml in the repo. Looks for sitemap at known locations.
+    Strategy: try `public/sitemap.xml`, then `sitemap.xml`, then `folder/sitemap.xml`.
+    If not found, create a minimal sitemap.xml in the same folder as the page.
+    """
+    import base64
+    candidate_paths = ["public/sitemap.xml", "sitemap.xml"]
+    if folder:
+        candidate_paths.insert(0, f"{folder}/sitemap.xml")
+        # Also check for sitemap at the root of public/ inferred from folder
+        if "/" in folder:
+            root = folder.split("/")[0]
+            candidate_paths.insert(0, f"{root}/sitemap.xml")
+    seen = set()
+    candidate_paths = [p for p in candidate_paths if not (p in seen or seen.add(p))]
+
+    existing_sha = None
+    existing_xml = None
+    existing_path = None
+    for path in candidate_paths:
+        url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}"
+        r = await client.get(url, headers=_github_headers(token), params={"ref": branch})
+        if r.status_code == 200:
+            data = r.json()
+            existing_sha = data.get("sha")
+            try:
+                existing_xml = base64.b64decode(data.get("content", "")).decode("utf-8")
+            except Exception:
+                existing_xml = None
+            existing_path = path
+            break
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    new_entry = f'  <url>\n    <loc>{page_url}</loc>\n    <lastmod>{today}</lastmod>\n    <changefreq>monthly</changefreq>\n    <priority>0.7</priority>\n  </url>'
+
+    if existing_xml and "<urlset" in existing_xml:
+        # If URL already present, just update the lastmod via simple regex
+        import re
+        if page_url in existing_xml:
+            new_xml = re.sub(
+                r"(<url>\s*<loc>" + re.escape(page_url) + r"</loc>\s*<lastmod>)[^<]*(</lastmod>)",
+                rf"\g<1>{today}\g<2>",
+                existing_xml,
+            )
+            action = "updated_existing_entry"
+        else:
+            # Insert new entry before closing </urlset>
+            new_xml = existing_xml.replace("</urlset>", f"{new_entry}\n</urlset>")
+            action = "appended_entry"
+        target_path = existing_path
+    else:
+        # Create a new minimal sitemap
+        new_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            f"{new_entry}\n"
+            "</urlset>\n"
+        )
+        target_path = f"{folder}/sitemap.xml" if folder else "public/sitemap.xml"
+        action = "created_new"
+        existing_sha = None
+
+    msg = f"LOGI SEO: sitemap.xml — {action} ({slug})"
+    res = await _github_put_file(client, token, owner, repo, target_path, branch, msg, new_xml, existing_sha)
+    return {"path": target_path, "action": action, "commit_sha": res.get("commit_sha"), "commit_url": res.get("commit_url")}
 
 
 @api.get("/drafts/{draft_id}/export")
@@ -1851,8 +1977,8 @@ async def _get_google_credentials(user_id: str):
     if not gc or not gc.get("refresh_token"):
         raise HTTPException(401, "Google non connecté. Connectez votre compte Google dans la page Performance.")
     creds = Credentials(
-        token=gc.get("access_token"),
-        refresh_token=gc["refresh_token"],
+        token=dec(gc.get("access_token")),
+        refresh_token=dec(gc["refresh_token"]),
         token_uri="https://oauth2.googleapis.com/token",
         client_id=GOOGLE_OAUTH_CLIENT_ID,
         client_secret=GOOGLE_OAUTH_CLIENT_SECRET,
@@ -1864,7 +1990,7 @@ async def _get_google_credentials(user_id: str):
             await db.users.update_one(
                 {"id": user_id},
                 {"$set": {
-                    "google_oauth.access_token": creds.token,
+                    "google_oauth.access_token": enc(creds.token),
                     "google_oauth.expiry": creds.expiry.isoformat() if creds.expiry else None,
                 }},
             )
@@ -1952,8 +2078,8 @@ async def google_callback(code: str, state: str, scope: Optional[str] = None):
         {"id": user_id},
         {"$set": {
             "google_oauth": {
-                "access_token": creds.token,
-                "refresh_token": creds.refresh_token,
+                "access_token": enc(creds.token),
+                "refresh_token": enc(creds.refresh_token),
                 "scopes": list(creds.scopes or GOOGLE_SCOPES),
                 "expiry": creds.expiry.isoformat() if creds.expiry else None,
                 "connected_at": now_iso(),
@@ -2136,6 +2262,110 @@ async def site_performance_real(site_id: str, days: int = 28, user=Depends(get_c
             result["ga4_error"] = f"Erreur GA4: {exc}"
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Rank Tracking (snapshots quotidiens de la position GSC par mot-clé)
+# ---------------------------------------------------------------------------
+async def _capture_rank_snapshot(user_id: str, site_id: str, lookback_days: int = 7) -> dict:
+    """Fetch top GSC queries for the last `lookback_days` and persist a snapshot for today."""
+    from googleapiclient.discovery import build
+    site = await db.sites.find_one({"id": site_id, "user_id": user_id}, {"_id": 0})
+    if not site:
+        raise HTTPException(404, "Site introuvable")
+    gsc_url = site.get("gsc_site_url")
+    if not gsc_url:
+        raise HTTPException(400, "Aucune propriété GSC n'est configurée pour ce site.")
+    creds = await _get_google_credentials(user_id)
+    end_date = datetime.now(timezone.utc).date()
+    start_date = end_date - timedelta(days=lookback_days)
+    def _query():
+        svc = build("searchconsole", "v1", credentials=creds, cache_discovery=False)
+        return svc.searchanalytics().query(siteUrl=gsc_url, body={
+            "startDate": start_date.isoformat(),
+            "endDate": end_date.isoformat(),
+            "dimensions": ["query"],
+            "rowLimit": 100,
+        }).execute()
+    data = await asyncio.to_thread(_query)
+    today_iso = end_date.isoformat()
+    # Idempotent: delete today's snapshot for this site before inserting
+    await db.rank_snapshots.delete_many({"user_id": user_id, "site_id": site_id, "snapshot_date": today_iso})
+    rows = data.get("rows", [])
+    docs = []
+    for r in rows:
+        docs.append({
+            "id": gen_id(),
+            "user_id": user_id,
+            "site_id": site_id,
+            "keyword": r["keys"][0],
+            "position": round(r.get("position") or 0, 1),
+            "clicks": int(r.get("clicks", 0)),
+            "impressions": int(r.get("impressions", 0)),
+            "ctr": round((r.get("ctr") or 0) * 100, 2),
+            "snapshot_date": today_iso,
+            "lookback_days": lookback_days,
+            "created_at": now_iso(),
+        })
+    if docs:
+        await db.rank_snapshots.insert_many(docs)
+    return {"snapshot_date": today_iso, "count": len(docs)}
+
+
+@api.post("/sites/{site_id}/rank-snapshot")
+async def take_rank_snapshot(site_id: str, user=Depends(get_current_user)):
+    """Manually trigger a rank snapshot for today."""
+    return await _capture_rank_snapshot(user["id"], site_id)
+
+
+@api.get("/sites/{site_id}/rank-tracking")
+async def get_rank_tracking(site_id: str, days: int = 30, top: int = 20, user=Depends(get_current_user)):
+    """Return per-keyword time series for the last N days. Returns the top-N keywords by latest clicks."""
+    await _get_user_site(site_id, user)
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
+    cursor = db.rank_snapshots.find(
+        {"user_id": user["id"], "site_id": site_id, "snapshot_date": {"$gte": cutoff}},
+        {"_id": 0},
+    ).sort("snapshot_date", 1)
+    snapshots = await cursor.to_list(50000)
+    if not snapshots:
+        return {"site_id": site_id, "days": days, "snapshots_count": 0, "dates": [], "keywords": []}
+    # Distinct dates (sorted)
+    dates = sorted({s["snapshot_date"] for s in snapshots})
+    # Pick top-N keywords by clicks in the latest snapshot
+    latest_date = dates[-1]
+    latest_kw = sorted(
+        [s for s in snapshots if s["snapshot_date"] == latest_date],
+        key=lambda s: -s["clicks"],
+    )[:top]
+    keyword_list = [k["keyword"] for k in latest_kw]
+    # Build per-keyword series
+    series = []
+    for kw in keyword_list:
+        kw_snaps = [s for s in snapshots if s["keyword"] == kw]
+        kw_snaps.sort(key=lambda s: s["snapshot_date"])
+        oldest = kw_snaps[0]
+        newest = kw_snaps[-1]
+        delta = round(oldest["position"] - newest["position"], 1)  # positive = improved (lower position = better)
+        series.append({
+            "keyword": kw,
+            "current_position": newest["position"],
+            "current_clicks": newest["clicks"],
+            "current_impressions": newest["impressions"],
+            "current_ctr": newest["ctr"],
+            "previous_position": oldest["position"],
+            "delta": delta,
+            "trend": "up" if delta > 0.5 else "down" if delta < -0.5 else "stable",
+            "series": [{"date": s["snapshot_date"], "position": s["position"]} for s in kw_snaps],
+        })
+    return {
+        "site_id": site_id,
+        "days": days,
+        "snapshots_count": len(dates),
+        "dates": dates,
+        "latest_date": latest_date,
+        "keywords": series,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2663,4 +2893,47 @@ app.add_middleware(
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    try:
+        scheduler.shutdown(wait=False)
+    except Exception:
+        pass
     client.close()
+
+
+# ---------------------------------------------------------------------------
+# Scheduler: daily rank snapshot at 04:00 UTC for every site that has GSC config
+# ---------------------------------------------------------------------------
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+scheduler = AsyncIOScheduler(timezone="UTC")
+
+
+async def _daily_rank_snapshots_job():
+    """Background task: snapshot rank tracking for every site that has GSC + connected user."""
+    try:
+        # Find all sites with a GSC URL configured
+        sites = await db.sites.find({"gsc_site_url": {"$exists": True, "$ne": None}}, {"_id": 0}).to_list(1000)
+        for s in sites:
+            uid = s.get("user_id")
+            sid = s.get("id")
+            if not uid or not sid:
+                continue
+            try:
+                user_doc = await db.users.find_one({"id": uid}, {"google_oauth": 1})
+                if not (user_doc or {}).get("google_oauth", {}).get("refresh_token"):
+                    continue
+                res = await _capture_rank_snapshot(uid, sid, lookback_days=7)
+                logger.info("Daily rank snapshot done for site %s: %s keywords", sid, res.get("count"))
+            except Exception as exc:
+                logger.warning("Rank snapshot failed for site %s: %s", sid, exc)
+    except Exception as exc:
+        logger.error("Scheduler job _daily_rank_snapshots_job error: %s", exc)
+
+
+@app.on_event("startup")
+async def _start_scheduler():
+    try:
+        scheduler.add_job(_daily_rank_snapshots_job, "cron", hour=4, minute=0, id="daily_rank_snapshots", replace_existing=True)
+        scheduler.start()
+        logger.info("Scheduler started — daily rank snapshots at 04:00 UTC")
+    except Exception as exc:
+        logger.warning("Scheduler failed to start: %s", exc)
