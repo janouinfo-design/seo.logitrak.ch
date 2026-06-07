@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useSites } from "@/contexts/SiteContext";
 import PageHeader from "@/components/PageHeader";
-import { ArrowUpRight, FileText, Search, CheckCircle2, AlertTriangle, Sparkles, KeyRound, Wand2 } from "lucide-react";
+import { ArrowUpRight, FileText, Search, CheckCircle2, AlertTriangle, Sparkles, KeyRound, Wand2, BookOpen } from "lucide-react";
 
 function StatCard({ overline, value, hint, tone = "default", testid }) {
   const accent = tone === "accent" ? "text-[#002FA7]" : tone === "success" ? "text-[#16A34A]" : "text-slate-950";
@@ -33,7 +33,18 @@ export default function Dashboard() {
       <PageHeader
         overline={activeSite ? `Contexte · ${activeSite.label}` : "Aperçu"}
         title="Vue d'ensemble"
-        description="Synthèse de votre activité SEO sur l'ensemble de vos sites Wix connectés."
+        description="Synthèse de votre activité SEO sur l'ensemble de vos sites connectés."
+        action={
+          <a
+            href="/guide-logi-seo-booster.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="download-guide-pdf"
+            className="inline-flex items-center gap-2 border border-slate-300 bg-white hover:border-[#002FA7] hover:text-[#002FA7] text-slate-700 px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
+          >
+            <BookOpen className="w-4 h-4" /> Télécharger le guide PDF
+          </a>
+        }
       />
 
       {sites.length === 0 ? (

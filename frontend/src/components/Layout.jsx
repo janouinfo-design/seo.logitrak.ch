@@ -15,6 +15,7 @@ import {
   Plus,
   KeyRound,
   Wand2,
+  BookOpen,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -147,6 +148,16 @@ export default function Layout() {
         </nav>
 
         <div className="p-3 border-t border-slate-200">
+          <a
+            href="/guide-logi-seo-booster.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="sidebar-guide-pdf"
+            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors mb-1"
+          >
+            <BookOpen className="w-[18px] h-[18px]" strokeWidth={1.8} />
+            Guide PDF
+          </a>
           <div className="px-3 py-2 mb-1">
             <div className="text-xs font-medium text-slate-900 truncate">{user?.full_name}</div>
             <div className="text-[11px] text-slate-500 truncate">{user?.email}</div>
