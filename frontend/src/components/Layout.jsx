@@ -27,7 +27,7 @@ import {
 
 const nav = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true, testid: "nav-dashboard" },
-  { to: "/sites", icon: Globe, label: "Sites Wix", testid: "nav-sites" },
+  { to: "/sites", icon: Globe, label: "Sites", testid: "nav-sites" },
   { to: "/audit", icon: Search, label: "Audit SEO", testid: "nav-audit" },
   { to: "/keywords", icon: KeyRound, label: "Mots-clés", testid: "nav-keywords" },
   { to: "/optimizer", icon: Wand2, label: "Optimiseur de pages", testid: "nav-optimizer" },

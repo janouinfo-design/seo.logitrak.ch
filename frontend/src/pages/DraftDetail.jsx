@@ -104,6 +104,8 @@ export default function DraftDetail() {
       const { data } = await api.post(`/drafts/${id}/publish`, { publish_immediately: false });
       if (data.wix_draft_id) {
         toast.success("Brouillon créé sur Wix avec succès");
+      } else if (data.status === "ready") {
+        toast.success("Brouillon validé · prêt à exporter ou copier-coller");
       } else {
         toast.warning("Wix indisponible — brouillon marqué prêt à publier");
       }

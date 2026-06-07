@@ -24,22 +24,25 @@ le classement Google et la visibilité dans les IA (ChatGPT, Gemini, Perplexity,
 - Design : Swiss & High-Contrast, bleu #002FA7, fonts Cabinet Grotesk + IBM Plex Sans.
 - Génération IA : `emergentintegrations.llm.chat.LlmChat` avec `claude-sonnet-4-5-20250929`.
 
-## Implemented (2026-02-07 — MVP + Phase 2)
+## Implemented (2026-02-07 — MVP + Phase 2 + Phase 2.5)
 - [x] Auth JWT (register, login, /me)
-- [x] Multi-sites Wix (CRUD) avec isolation utilisateur
-- [x] Récupération pages / blog posts Wix (avec fallback mock automatique)
-- [x] Audit SEO automatique (titres, méta, H1/H2, images alt, contenu, URLs)
+- [x] **Multi-plateformes : Wix API + URL publique (Emergent / WordPress / custom)**
+- [x] **Bouton "Ajout rapide" : connecte logirent.ch + logitime.ch en 1 clic**
+- [x] **Crawler HTTP réel (sitemap.xml + BFS) sur les vraies URLs publiques**
+- [x] **Détection automatique des SPA (sites client-rendered) — issue SEO critique remontée**
+- [x] Multi-sites isolés par utilisateur
+- [x] Audit SEO automatique sur les vraies données scrapées
 - [x] Génération IA Claude Sonnet 4.5 (article, page locale, FAQ, service)
-- [x] **Recherche IA de mots-clés** (clustering par intention : locale, informationnelle, transactionnelle, navigationnelle ; difficulté + volume + priorité)
-- [x] **Liste de mots-clés cibles sauvegardés**
-- [x] **Optimiseur de pages Wix** (comparaison avant/après ; titre, meta, H1, plan H2, intro AI Overviews, FAQ, plan de contenu, améliorations chiffrées)
-- [x] **Application en 1 clic d'une optimisation → brouillon prêt à publier** (idempotent)
+- [x] Recherche IA de mots-clés (clustering par intention)
+- [x] Liste de mots-clés cibles sauvegardés
+- [x] Optimiseur de pages réelles (comparaison avant/après)
+- [x] Application en 1 clic d'une optimisation → brouillon prêt à publier (idempotent)
 - [x] Drafts CRUD + versions + rollback
-- [x] Publication vers Wix Blog (création de brouillon)
-- [x] Historique des publications (logs)
-- [x] Performance (mock GSC : impressions, clics, position, CTR, mots-clés, recommandations)
-- [x] Dashboard avec stats globales et accès rapides
-- [x] UI complète FR, Swiss design, 9 pages + détail brouillon
+- [x] Publication contextualisée : Wix Blog API (sites Wix) / "Ready for export" (URL publique)
+- [x] Historique des publications
+- [x] Performance (mock GSC) avec bandeau d'avertissement
+- [x] Dashboard avec stats et accès rapides
+- [x] UI complète FR, Swiss design, 9 pages
 
 ## Backlog / Phase 2 (P0)
 - [ ] OAuth Google → vraies données Google Search Console & Google Analytics

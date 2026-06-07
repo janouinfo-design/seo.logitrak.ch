@@ -27,6 +27,8 @@ from typing import List, Optional, Literal, Dict, Any
 import jwt
 import bcrypt
 import httpx
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 
 # ---------------------------------------------------------------------------
@@ -90,15 +92,17 @@ class AuthResponse(BaseModel):
 class SiteCreate(BaseModel):
     label: Literal["Logirent", "Logitime", "Autre"]
     name: str
-    wix_site_id: str
-    wix_account_id: str
-    wix_api_key: str
+    site_type: Literal["wix", "url_crawl"] = "wix"
+    wix_site_id: Optional[str] = None
+    wix_account_id: Optional[str] = None
+    wix_api_key: Optional[str] = None
     base_url: Optional[str] = None
 
 
 class SiteUpdate(BaseModel):
     label: Optional[Literal["Logirent", "Logitime", "Autre"]] = None
     name: Optional[str] = None
+    site_type: Optional[Literal["wix", "url_crawl"]] = None
     wix_site_id: Optional[str] = None
     wix_account_id: Optional[str] = None
     wix_api_key: Optional[str] = None
@@ -109,8 +113,9 @@ class SitePublic(BaseModel):
     id: str
     label: str
     name: str
-    wix_site_id: str
-    wix_account_id: str
+    site_type: str
+    wix_site_id: Optional[str] = None
+    wix_account_id: Optional[str] = None
     base_url: Optional[str] = None
     has_api_key: bool
     created_at: str
@@ -275,8 +280,9 @@ def site_to_public(site: dict) -> SitePublic:
         id=site["id"],
         label=site["label"],
         name=site["name"],
-        wix_site_id=site["wix_site_id"],
-        wix_account_id=site["wix_account_id"],
+        site_type=site.get("site_type", "wix"),
+        wix_site_id=site.get("wix_site_id"),
+        wix_account_id=site.get("wix_account_id"),
         base_url=site.get("base_url"),
         has_api_key=bool(site.get("wix_api_key")),
         created_at=site["created_at"],
@@ -285,14 +291,22 @@ def site_to_public(site: dict) -> SitePublic:
 
 @api.post("/sites", response_model=SitePublic)
 async def create_site(payload: SiteCreate, user=Depends(get_current_user)):
+    site_type = payload.site_type
+    if site_type == "wix":
+        if not (payload.wix_site_id and payload.wix_account_id and payload.wix_api_key):
+            raise HTTPException(422, "Pour un site Wix, wix_site_id, wix_account_id et wix_api_key sont requis.")
+    else:  # url_crawl
+        if not payload.base_url:
+            raise HTTPException(422, "Pour un site URL publique, base_url est requis.")
     site = {
         "id": gen_id(),
         "user_id": user["id"],
         "label": payload.label,
         "name": payload.name.strip(),
-        "wix_site_id": payload.wix_site_id.strip(),
-        "wix_account_id": payload.wix_account_id.strip(),
-        "wix_api_key": payload.wix_api_key.strip(),
+        "site_type": site_type,
+        "wix_site_id": (payload.wix_site_id or "").strip() or None,
+        "wix_account_id": (payload.wix_account_id or "").strip() or None,
+        "wix_api_key": (payload.wix_api_key or "").strip() or None,
         "base_url": (payload.base_url or "").strip() or None,
         "created_at": now_iso(),
     }
@@ -332,6 +346,40 @@ async def delete_site(site_id: str, user=Depends(get_current_user)):
     if res.deleted_count == 0:
         raise HTTPException(404, "Site introuvable")
     return {"ok": True}
+
+
+@api.post("/sites/quick-add-emergent")
+async def quick_add_emergent_sites(user=Depends(get_current_user)):
+    """One-click: add logirent.ch and logitime.ch as url_crawl sites if not already present."""
+    presets = [
+        {"label": "Logirent", "name": "Logirent (logirent.ch)", "base_url": "https://www.logirent.ch"},
+        {"label": "Logitime", "name": "Logitime (logitime.ch)", "base_url": "https://www.logitime.ch"},
+    ]
+    added: List[SitePublic] = []
+    skipped: List[str] = []
+    for p in presets:
+        existing = await db.sites.find_one({
+            "user_id": user["id"],
+            "base_url": p["base_url"],
+        })
+        if existing:
+            skipped.append(p["name"])
+            continue
+        site = {
+            "id": gen_id(),
+            "user_id": user["id"],
+            "label": p["label"],
+            "name": p["name"],
+            "site_type": "url_crawl",
+            "wix_site_id": None,
+            "wix_account_id": None,
+            "wix_api_key": None,
+            "base_url": p["base_url"],
+            "created_at": now_iso(),
+        }
+        await db.sites.insert_one(site)
+        added.append(site_to_public(site))
+    return {"added": added, "skipped": skipped}
 
 
 async def _get_user_site(site_id: str, user: dict) -> dict:
@@ -421,8 +469,126 @@ def _mock_pages(site: dict) -> List[dict]:
     ]
 
 
+async def crawl_public_site(site: dict, max_pages: int = 12) -> List[dict]:
+    """Crawl a public site by URL: try /sitemap.xml first, otherwise BFS from base_url.
+    Extracts per-page: title, meta description, H1/H2 list, word count, images_total, images_without_alt.
+    Pure scraping — no API needed. Detects SPA / client-rendered sites and flags them."""
+    base_url = (site.get("base_url") or "").rstrip("/")
+    if not base_url:
+        return []
+    try:
+        parsed = urlparse(base_url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return []
+    except Exception:
+        return []
+    host = parsed.netloc
+
+    def normalize(u: str) -> str:
+        # Strip URL fragments (#…) and trailing slashes
+        u = u.split("#")[0].rstrip("/")
+        return u or u
+
+    urls_to_visit: List[str] = []
+    seen: set = set()
+    headers = {"User-Agent": "LogiSEOBooster/1.0 (+https://emergent.sh)"}
+
+    def add_url(u: str):
+        n = normalize(u)
+        if n and n not in seen and urlparse(n).netloc == host:
+            seen.add(n)
+            urls_to_visit.append(n)
+
+    async with httpx.AsyncClient(timeout=10, headers=headers, follow_redirects=True) as cli:
+        # 1. Sitemap
+        try:
+            r = await cli.get(f"{base_url}/sitemap.xml")
+            if r.status_code == 200 and "xml" in r.headers.get("content-type", "").lower():
+                soup = BeautifulSoup(r.text, "xml")
+                for loc in soup.find_all("loc"):
+                    add_url(loc.text.strip())
+                    if len(urls_to_visit) >= max_pages:
+                        break
+        except Exception as exc:
+            logger.info("sitemap fetch failed for %s: %s", base_url, exc)
+
+        # 2. Fallback: BFS from home
+        if not urls_to_visit:
+            add_url(base_url)
+            try:
+                r = await cli.get(base_url)
+                if r.status_code == 200:
+                    soup = BeautifulSoup(r.text, "lxml")
+                    for a in soup.find_all("a", href=True):
+                        full = urljoin(base_url, a["href"])
+                        add_url(full)
+                        if len(urls_to_visit) >= max_pages:
+                            break
+            except Exception as exc:
+                logger.info("home crawl failed for %s: %s", base_url, exc)
+
+        # 3. Visit each URL
+        results: List[dict] = []
+        sem = asyncio.Semaphore(4)
+
+        async def fetch_one(u: str) -> Optional[dict]:
+            async with sem:
+                try:
+                    rr = await cli.get(u)
+                    if rr.status_code >= 400:
+                        return None
+                    raw_html = rr.text
+                    soup = BeautifulSoup(raw_html, "lxml")
+                    page_title = (soup.title.string or "").strip() if soup.title else ""
+                    meta_desc_tag = soup.find("meta", attrs={"name": "description"})
+                    meta_desc = (meta_desc_tag.get("content") or "").strip() if meta_desc_tag else None
+                    h1s = [h.get_text(strip=True) for h in soup.find_all("h1") if h.get_text(strip=True)]
+                    h2s = [h.get_text(strip=True) for h in soup.find_all("h2") if h.get_text(strip=True)]
+                    # Body text (strip non-content tags)
+                    body_soup = BeautifulSoup(raw_html, "lxml")
+                    for tag in body_soup(["script", "style", "noscript"]):
+                        tag.decompose()
+                    body_text = body_soup.get_text(" ", strip=True)
+                    word_count = len([w for w in re.split(r"\s+", body_text) if w])
+                    imgs = soup.find_all("img")
+                    imgs_total = len(imgs)
+                    imgs_no_alt = sum(1 for i in imgs if not (i.get("alt") or "").strip())
+                    # SPA detection: client-rendered apps often have <div id="root"> with very little body text
+                    spa_markers = bool(soup.find(id=re.compile(r"^(root|app|__next)$"))) or "react" in raw_html.lower()[:5000]
+                    is_spa = spa_markers and word_count < 100 and len(h1s) == 0
+                    return {
+                        "id": "crawl-" + str(abs(hash(u))),
+                        "title": page_title or u,
+                        "url": u,
+                        "meta_title": page_title or None,
+                        "meta_description": meta_desc,
+                        "h1": h1s,
+                        "h2": h2s,
+                        "word_count": word_count,
+                        "images_total": imgs_total,
+                        "images_without_alt": imgs_no_alt,
+                        "spa_detected": is_spa,
+                    }
+                except Exception as exc:
+                    logger.info("crawl page failed %s: %s", u, exc)
+                    return None
+
+        tasks = [fetch_one(u) for u in urls_to_visit[:max_pages]]
+        for res in await asyncio.gather(*tasks):
+            if res:
+                results.append(res)
+        return results
+
+
 async def fetch_wix_pages(site: dict) -> List[dict]:
-    """Try Wix REST API first; fall back to mock data if unreachable / unauthorized."""
+    """Dispatcher: routes to Wix API or URL crawl depending on site_type. Falls back to mock if both fail."""
+    site_type = site.get("site_type", "wix")
+    if site_type == "url_crawl":
+        pages = await crawl_public_site(site)
+        if pages:
+            return pages
+        return _mock_pages(site)
+    # Default Wix API path
     url = "https://www.wixapis.com/site-pages/v2/pages/query"
     try:
         async with httpx.AsyncClient(timeout=10) as cli:
@@ -538,6 +704,11 @@ async def list_site_blog_posts(site_id: str, user=Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 def _audit_page(page: dict) -> List[dict]:
     issues = []
+    # SPA / client-rendered detection — critical for SEO
+    if page.get("spa_detected"):
+        issues.append({"severity": "high", "category": "Rendu côté client",
+                       "message": "Page rendue côté client (SPA) — Google et les IA voient un HTML quasi vide",
+                       "recommendation": "Activer le rendu côté serveur (SSR) ou la pré-génération statique (SSG), ou utiliser un service de prerendering. Sans cela, le SEO est fortement pénalisé même si le contenu visible côté utilisateur paraît correct."})
     title = page.get("meta_title") or page.get("title") or ""
     desc = page.get("meta_description") or ""
     if not title:
@@ -848,13 +1019,22 @@ async def publish_draft(draft_id: str, payload: PublishRequest, user=Depends(get
         raise HTTPException(404, "Brouillon introuvable")
     site = await _get_user_site(d["site_id"], user)
 
-    wix_draft_id = await create_wix_draft_post(
-        site=site,
-        title=d["title"],
-        body_markdown=d["body_markdown"],
-        seo_title=d.get("meta_title"),
-        seo_description=d.get("meta_description"),
-    )
+    site_type = site.get("site_type", "wix")
+    wix_draft_id: Optional[str] = None
+    status_label: str
+
+    if site_type == "wix":
+        wix_draft_id = await create_wix_draft_post(
+            site=site,
+            title=d["title"],
+            body_markdown=d["body_markdown"],
+            seo_title=d.get("meta_title"),
+            seo_description=d.get("meta_description"),
+        )
+        status_label = "success" if wix_draft_id else "wix_unavailable"
+    else:
+        # URL crawl sites (Emergent-hosted etc.) — no API yet, mark as ready/exported.
+        status_label = "ready_for_export"
 
     log_entry = {
         "id": gen_id(),
@@ -864,7 +1044,8 @@ async def publish_draft(draft_id: str, payload: PublishRequest, user=Depends(get
         "title": d["title"],
         "action": "publish_attempt",
         "wix_draft_id": wix_draft_id,
-        "status": "success" if wix_draft_id else "wix_unavailable",
+        "status": status_label,
+        "site_type": site_type,
         "created_at": now_iso(),
     }
     await db.publish_logs.insert_one(log_entry)
