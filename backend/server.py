@@ -1212,6 +1212,60 @@ def _type_hint(t: str) -> str:
 
 @api.post("/content/generate", response_model=DraftPublic)
 async def generate_content(req: ContentGenerateRequest, user=Depends(get_current_user)):
+    """Synchronous generation (kept for backward compat, may timeout for long content)."""
+    return await _do_generate_content(req, user["id"])
+
+
+@api.post("/content/generate-async")
+async def generate_content_async(req: ContentGenerateRequest, user=Depends(get_current_user)):
+    """Start generation in background. Returns job_id to poll via /content/jobs/{id}."""
+    job_id = gen_id()
+    await db.generation_jobs.insert_one({
+        "id": job_id,
+        "user_id": user["id"],
+        "status": "pending",
+        "params": req.model_dump(),
+        "result": None,
+        "error": None,
+        "created_at": now_iso(),
+        "completed_at": None,
+    })
+
+    async def _bg():
+        try:
+            draft = await _do_generate_content(req, user["id"])
+            await db.generation_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "completed", "result": draft.model_dump(), "completed_at": now_iso()}},
+            )
+        except HTTPException as exc:
+            await db.generation_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "failed", "error": str(exc.detail), "completed_at": now_iso()}},
+            )
+        except Exception as exc:
+            logger.exception("Async generation failed")
+            await db.generation_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "failed", "error": f"Erreur inattendue : {exc}", "completed_at": now_iso()}},
+            )
+
+    asyncio.create_task(_bg())
+    return {"job_id": job_id, "status": "pending"}
+
+
+@api.get("/content/jobs/{job_id}")
+async def get_generation_job(job_id: str, user=Depends(get_current_user)):
+    job = await db.generation_jobs.find_one(
+        {"id": job_id, "user_id": user["id"]}, {"_id": 0, "user_id": 0, "params": 0}
+    )
+    if not job:
+        raise HTTPException(404, "Job introuvable")
+    return job
+
+
+async def _do_generate_content(req: ContentGenerateRequest, user_id: str) -> DraftPublic:
+    user = {"id": user_id}
     site = await _get_user_site(req.site_id, user)
 
     # Lazy import emergentintegrations to avoid load failures at startup

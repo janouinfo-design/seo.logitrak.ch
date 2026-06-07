@@ -83,7 +83,8 @@ export default function Generator() {
     if (!form.topic.trim()) return toast.error("Indiquez un sujet");
     setLoading(true);
     try {
-      const { data } = await api.post("/content/generate", {
+      // Start async job
+      const { data: job } = await api.post("/content/generate-async", {
         site_id: activeSite.id,
         content_type: form.content_type,
         topic: form.topic.trim(),
@@ -93,10 +94,29 @@ export default function Generator() {
         target_length: form.target_length,
         extra_instructions: form.extra_instructions.trim() || null,
       });
-      toast.success("Contenu généré");
-      navigate(`/drafts/${data.id}`);
+      const jobId = job.job_id;
+      toast.info("Génération en cours… (peut prendre 1-3 minutes)");
+
+      // Poll every 3 seconds for up to 5 minutes
+      const maxAttempts = 100;
+      let attempts = 0;
+      while (attempts < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 3000));
+        attempts++;
+        const { data: status } = await api.get(`/content/jobs/${jobId}`);
+        if (status.status === "completed") {
+          toast.success("Contenu généré ✨");
+          navigate(`/drafts/${status.result.id}`);
+          return;
+        }
+        if (status.status === "failed") {
+          throw new Error(status.error || "Erreur de génération");
+        }
+        // still pending → continue
+      }
+      throw new Error("Génération trop longue (>5 min). Réessayez avec un sujet plus court.");
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Erreur de génération");
+      toast.error(err?.response?.data?.detail || err?.message || "Erreur de génération");
     } finally {
       setLoading(false);
     }
