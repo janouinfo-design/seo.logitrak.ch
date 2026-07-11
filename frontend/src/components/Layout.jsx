@@ -10,6 +10,7 @@ import {
   History,
   LineChart,
   Rocket,
+  CreditCard,
   LogOut,
   ChevronsUpDown,
   Check,
@@ -38,6 +39,7 @@ const nav = [
   { to: "/drafts", icon: FileText, label: "Brouillons", testid: "nav-drafts" },
   { to: "/history", icon: History, label: "Historique", testid: "nav-history" },
   { to: "/performance", icon: LineChart, label: "Performance", testid: "nav-performance" },
+  { to: "/billing", icon: CreditCard, label: "Facturation", testid: "nav-billing" },
 ];
 
 function SiteSwitcher() {
