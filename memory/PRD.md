@@ -91,9 +91,17 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   6 clusters, 8 quick wins, 10 contenus, 5 pages locales, 6 concurrents — l'IA a détecté
   le désalignement stratégique B2C/B2B des mots-clés suivis.
 - [x] Identifiants démo affichés sur la page de connexion + bouton "Remplir automatiquement" (2026-06-12).
-- [ ] 🥉 **AI Business Analyzer** (P0 — prochain) : comprendre l'entreprise AVANT de recommander
-  (activité, produits, services, cible, villes, concurrents, positionnement).
-  Note : `ai_visibility.py` produit déjà un `business` summary réutilisable comme base.
+- [x] 🥉 **AI Business Analyzer** (2026-06-12) : backend `/app/backend/business_analyzer.py`.
+  Analyse "directeur marketing" : identité, produits/services, segments cibles (besoins + messages),
+  zones, positionnement, value props, 6 concurrents (forces/faiblesses/comment les dépasser),
+  SWOT complet, 5 priorités marketing. Routes : `POST /api/sites/{id}/business-analyzer` (job async),
+  `GET/PUT /api/sites/{id}/business-profile` (profil éditable par l'utilisateur, flag `edited`,
+  merge partiel). Le profil stocké (`business_profiles`) est RÉUTILISÉ par Keyword Intelligence
+  (skip du crawl + de l'appel LLM profil si un profil existe — corrections utilisateur prioritaires).
+  Frontend : page `/business` (`BusinessAnalyzer.jsx`), nav "Business Analyzer" (icône Building2),
+  mode édition (activité, description, positionnement, zones, modèle). Testé e2e sur logirent.ch.
+- [x] **Menu Aide** (2026-06-12) : page `/aide` (`Aide.jsx`) — boucle Connecter→Analyser→Générer→
+  Publier→Mesurer, parcours 5 étapes avec liens, 13 modules expliqués, 7 FAQ, lien Guide PDF.
 - [ ] **Repositionnement UI "Agent Marketing IA"** : dashboard, storytelling, agents IA
   (SEO Agent, GEO Agent, Content Agent, Social Agent). Nom placeholder inchangé.
 - [ ] **Workflow Builder enrichi** : déclencheurs = perte de positions, baisse de trafic,

@@ -116,13 +116,18 @@ def _sanitize(report: dict) -> dict:
     return report
 
 
-async def run_keyword_intelligence(site: dict, saved_keywords: List[str], llm_key: str) -> dict:
-    pages = await fetch_pages(site.get("base_url") or "")
-    if not pages:
-        raise RuntimeError(f"Impossible de récupérer les pages de {site.get('base_url') or 'ce site'} — vérifiez l'URL publique du site.")
-    profile = await build_business_profile(site, pages, llm_key)
+async def run_keyword_intelligence(site: dict, saved_keywords: List[str], llm_key: str, existing_profile: Optional[dict] = None) -> dict:
+    if existing_profile:
+        profile = existing_profile
+        pages_urls: List[str] = []
+    else:
+        pages = await fetch_pages(site.get("base_url") or "")
+        if not pages:
+            raise RuntimeError(f"Impossible de récupérer les pages de {site.get('base_url') or 'ce site'} — vérifiez l'URL publique du site.")
+        profile = await build_business_profile(site, pages, llm_key)
+        pages_urls = [p["url"] for p in pages]
     intelligence = await build_keyword_intelligence(site, profile, saved_keywords, llm_key)
     report = _sanitize(intelligence)
     report["business_profile"] = profile
-    report["pages_analyzed"] = [p["url"] for p in pages]
+    report["pages_analyzed"] = pages_urls
     return report

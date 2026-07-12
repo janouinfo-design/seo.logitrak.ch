@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import {
   HelpCircle,
+  Building2,
   Globe,
   Search,
   Radar,
@@ -73,6 +74,7 @@ const MODULES = [
   { icon: Globe, to: "/sites", label: "Sites", text: "Connexion de vos sites (Wix, URL publique, GitHub, FTP). Configuration des accès de publication." },
   { icon: Search, to: "/audit", label: "Audit SEO", text: "Audit technique complet + détection de contenus dupliqués entre vos pages." },
   { icon: Radar, to: "/ai-visibility", label: "AI Visibility", text: "10 scores d'optimisation IA (GEO) : citation réelle par ChatGPT/Claude/Gemini, EEAT, Schema.org, entités…" },
+  { icon: Building2, to: "/business", label: "Business Analyzer", text: "Profil business complet établi par l'IA : offres, cibles, concurrents, SWOT, priorités marketing — corrigeable par vous." },
   { icon: KeyRound, to: "/keywords", label: "Mots-clés", text: "Recherche simple de mots-clés par thème + liste de mots-clés suivis." },
   { icon: BrainCircuit, to: "/keyword-intelligence", label: "Keyword Intelligence", text: "Stratégie complète : clusters scorés, victoires rapides, plan de contenu, pages locales, concurrents." },
   { icon: Wand2, to: "/optimizer", label: "Optimiseur de pages", text: "Réécriture IA de vos pages existantes avec comparaison avant/après." },

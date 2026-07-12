@@ -24,6 +24,7 @@ import Optimizer from "@/pages/Optimizer";
 import AIVisibility from "@/pages/AIVisibility";
 import KeywordIntelligence from "@/pages/KeywordIntelligence";
 import Aide from "@/pages/Aide";
+import BusinessAnalyzer from "@/pages/BusinessAnalyzer";
 
 function App() {
   return (
@@ -47,6 +48,7 @@ function App() {
               <Route path="/ai-visibility" element={<AIVisibility />} />
               <Route path="/keywords" element={<Keywords />} />
               <Route path="/keyword-intelligence" element={<KeywordIntelligence />} />
+              <Route path="/business" element={<BusinessAnalyzer />} />
               <Route path="/optimizer" element={<Optimizer />} />
               <Route path="/generator" element={<Generator />} />
               <Route path="/drafts" element={<Drafts />} />

@@ -21,6 +21,7 @@ import {
   Radar,
   BrainCircuit,
   HelpCircle,
+  Building2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -36,6 +37,7 @@ const nav = [
   { to: "/sites", icon: Globe, label: "Sites", testid: "nav-sites" },
   { to: "/audit", icon: Search, label: "Audit SEO", testid: "nav-audit" },
   { to: "/ai-visibility", icon: Radar, label: "AI Visibility", testid: "nav-ai-visibility" },
+  { to: "/business", icon: Building2, label: "Business Analyzer", testid: "nav-business" },
   { to: "/keywords", icon: KeyRound, label: "Mots-clés", testid: "nav-keywords" },
   { to: "/keyword-intelligence", icon: BrainCircuit, label: "Keyword Intelligence", testid: "nav-keyword-intelligence" },
   { to: "/optimizer", icon: Wand2, label: "Optimiseur de pages", testid: "nav-optimizer" },

@@ -3885,7 +3885,11 @@ async def start_keyword_intelligence(site_id: str, user=Depends(get_current_user
         try:
             from keyword_intelligence import run_keyword_intelligence
             saved = await db.saved_keywords.find({"site_id": site_id, "user_id": user["id"]}, {"keyword": 1}).to_list(100)
-            report = await run_keyword_intelligence(site, [s["keyword"] for s in saved], EMERGENT_LLM_KEY)
+            prof_doc = await db.business_profiles.find_one({"site_id": site_id, "user_id": user["id"]})
+            report = await run_keyword_intelligence(
+                site, [s["keyword"] for s in saved], EMERGENT_LLM_KEY,
+                existing_profile=(prof_doc or {}).get("profile"),
+            )
             report.update({
                 "id": gen_id(),
                 "site_id": site_id,
@@ -3893,11 +3897,12 @@ async def start_keyword_intelligence(site_id: str, user=Depends(get_current_user
                 "created_at": now_iso(),
             })
             await db.keyword_intelligence_reports.insert_one({**report, "user_id": user["id"]})
-            await db.business_profiles.update_one(
-                {"site_id": site_id, "user_id": user["id"]},
-                {"$set": {"profile": report.get("business_profile"), "updated_at": now_iso()}},
-                upsert=True,
-            )
+            if not prof_doc:
+                await db.business_profiles.update_one(
+                    {"site_id": site_id, "user_id": user["id"]},
+                    {"$set": {"profile": report.get("business_profile"), "source": "keyword_intelligence", "updated_at": now_iso()}},
+                    upsert=True,
+                )
             await db.generation_jobs.update_one(
                 {"id": job_id},
                 {"$set": {"status": "completed", "result": report, "completed_at": now_iso()}},
@@ -3920,6 +3925,82 @@ async def get_latest_keyword_intelligence(site_id: str, user=Depends(get_current
         {"site_id": site_id, "user_id": user["id"]}, {"_id": 0, "user_id": 0}, sort=[("created_at", -1)]
     )
     return rep or {}
+
+
+# ---------------------------------------------------------------------------
+# AI Business Analyzer
+# ---------------------------------------------------------------------------
+@api.post("/sites/{site_id}/business-analyzer")
+async def start_business_analysis(site_id: str, user=Depends(get_current_user)):
+    """Lance une analyse business approfondie asynchrone. Poll via /content/jobs/{job_id}."""
+    site = await _get_user_site(site_id, user)
+    job_id = gen_id()
+    await db.generation_jobs.insert_one({
+        "id": job_id,
+        "user_id": user["id"],
+        "type": "business_analyzer",
+        "status": "pending",
+        "result": None,
+        "error": None,
+        "created_at": now_iso(),
+        "completed_at": None,
+    })
+
+    async def _bg():
+        try:
+            from business_analyzer import run_business_analysis
+            res = await run_business_analysis(site, EMERGENT_LLM_KEY)
+            doc = {
+                "profile": res["profile"],
+                "pages_analyzed": res["pages_analyzed"],
+                "source": "analyzer",
+                "edited": False,
+                "updated_at": now_iso(),
+            }
+            await db.business_profiles.update_one(
+                {"site_id": site_id, "user_id": user["id"]},
+                {"$set": doc},
+                upsert=True,
+            )
+            await db.generation_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "completed", "result": {**doc, "site_id": site_id}, "completed_at": now_iso()}},
+            )
+        except Exception as exc:
+            logger.exception("Business analysis failed")
+            await db.generation_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "failed", "error": str(exc), "completed_at": now_iso()}},
+            )
+
+    asyncio.create_task(_bg())
+    return {"job_id": job_id, "status": "pending"}
+
+
+@api.get("/sites/{site_id}/business-profile")
+async def get_business_profile(site_id: str, user=Depends(get_current_user)):
+    await _get_user_site(site_id, user)
+    doc = await db.business_profiles.find_one(
+        {"site_id": site_id, "user_id": user["id"]}, {"_id": 0, "user_id": 0}
+    )
+    return doc or {}
+
+
+class BusinessProfileUpdate(BaseModel):
+    profile: Dict[str, Any]
+
+
+@api.put("/sites/{site_id}/business-profile")
+async def update_business_profile(site_id: str, payload: BusinessProfileUpdate, user=Depends(get_current_user)):
+    await _get_user_site(site_id, user)
+    doc = await db.business_profiles.find_one({"site_id": site_id, "user_id": user["id"]})
+    merged = {**((doc or {}).get("profile") or {}), **payload.profile}
+    await db.business_profiles.update_one(
+        {"site_id": site_id, "user_id": user["id"]},
+        {"$set": {"profile": merged, "edited": True, "updated_at": now_iso()}},
+        upsert=True,
+    )
+    return {"profile": merged, "edited": True}
 
 
 # ---------------------------------------------------------------------------
