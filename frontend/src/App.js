@@ -23,6 +23,7 @@ import Keywords from "@/pages/Keywords";
 import Optimizer from "@/pages/Optimizer";
 import AIVisibility from "@/pages/AIVisibility";
 import KeywordIntelligence from "@/pages/KeywordIntelligence";
+import Aide from "@/pages/Aide";
 
 function App() {
   return (
@@ -54,6 +55,7 @@ function App() {
               <Route path="/performance" element={<Performance />} />
               <Route path="/automation" element={<Automation />} />
               <Route path="/billing" element={<Billing />} />
+              <Route path="/aide" element={<Aide />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

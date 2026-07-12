@@ -20,6 +20,7 @@ import {
   BookOpen,
   Radar,
   BrainCircuit,
+  HelpCircle,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -44,6 +45,7 @@ const nav = [
   { to: "/history", icon: History, label: "Historique", testid: "nav-history" },
   { to: "/performance", icon: LineChart, label: "Performance", testid: "nav-performance" },
   { to: "/billing", icon: CreditCard, label: "Facturation", testid: "nav-billing" },
+  { to: "/aide", icon: HelpCircle, label: "Aide", testid: "nav-aide" },
 ];
 
 function SiteSwitcher() {
