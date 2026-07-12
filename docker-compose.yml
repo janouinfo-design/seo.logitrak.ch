@@ -1,0 +1,66 @@
+name: logiseo
+
+services:
+  logiseo_mongodb:
+    image: mongo:7
+    container_name: logiseo_mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    volumes:
+      - logiseo_mongo_data:/data/db
+    networks:
+      - logiseo_network
+    # PAS de ports: exposés — accessible uniquement depuis le réseau Docker logiseo_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  logiseo_backend:
+    build: ./backend
+    container_name: logiseo_backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MONGO_URL: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@logiseo_mongodb:27017/?authSource=admin
+      DB_NAME: ${DB_NAME}
+    depends_on:
+      logiseo_mongodb:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8105:8001"
+    volumes:
+      - ./logs/backend:/app/logs
+    networks:
+      - logiseo_network
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8001/api/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  logiseo_frontend:
+    build:
+      context: ./frontend
+      args:
+        REACT_APP_BACKEND_URL: ${PUBLIC_URL}
+    container_name: logiseo_frontend
+    restart: unless-stopped
+    depends_on:
+      - logiseo_backend
+    ports:
+      - "127.0.0.1:3105:80"
+    networks:
+      - logiseo_network
+
+networks:
+  logiseo_network:
+    name: logiseo_network
+    driver: bridge
+
+volumes:
+  logiseo_mongo_data:
+    name: logiseo_mongo_data
