@@ -3800,6 +3800,69 @@ async def stripe_webhook(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# AI Visibility Center (GEO — Generative Engine Optimization)
+# ---------------------------------------------------------------------------
+@api.post("/sites/{site_id}/ai-visibility")
+async def start_ai_visibility(site_id: str, user=Depends(get_current_user)):
+    """Lance une analyse AI Visibility asynchrone. Poll via /content/jobs/{job_id}."""
+    site = await _get_user_site(site_id, user)
+    job_id = gen_id()
+    await db.generation_jobs.insert_one({
+        "id": job_id,
+        "user_id": user["id"],
+        "type": "ai_visibility",
+        "status": "pending",
+        "result": None,
+        "error": None,
+        "created_at": now_iso(),
+        "completed_at": None,
+    })
+
+    async def _bg():
+        try:
+            from ai_visibility import run_ai_visibility_analysis
+            report = await run_ai_visibility_analysis(site, EMERGENT_LLM_KEY)
+            report.update({
+                "id": gen_id(),
+                "site_id": site_id,
+                "site_name": site.get("name"),
+                "created_at": now_iso(),
+            })
+            await db.ai_visibility_reports.insert_one({**report, "user_id": user["id"]})
+            await db.generation_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "completed", "result": report, "completed_at": now_iso()}},
+            )
+        except Exception as exc:
+            logger.exception("AI visibility analysis failed")
+            await db.generation_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "failed", "error": str(exc), "completed_at": now_iso()}},
+            )
+
+    asyncio.create_task(_bg())
+    return {"job_id": job_id, "status": "pending"}
+
+
+@api.get("/sites/{site_id}/ai-visibility/latest")
+async def get_latest_ai_visibility(site_id: str, user=Depends(get_current_user)):
+    await _get_user_site(site_id, user)
+    rep = await db.ai_visibility_reports.find_one(
+        {"site_id": site_id, "user_id": user["id"]}, {"_id": 0, "user_id": 0}, sort=[("created_at", -1)]
+    )
+    return rep or {}
+
+
+@api.get("/sites/{site_id}/ai-visibility/history")
+async def get_ai_visibility_history(site_id: str, user=Depends(get_current_user)):
+    await _get_user_site(site_id, user)
+    return await db.ai_visibility_reports.find(
+        {"site_id": site_id, "user_id": user["id"]},
+        {"_id": 0, "created_at": 1, "global_score": 1, "scores": 1},
+    ).sort("created_at", -1).to_list(30)
+
+
+# ---------------------------------------------------------------------------
 # Scheduler: daily rank snapshot at 04:00 UTC for every site that has GSC config
 # ---------------------------------------------------------------------------
 from apscheduler.schedulers.asyncio import AsyncIOScheduler

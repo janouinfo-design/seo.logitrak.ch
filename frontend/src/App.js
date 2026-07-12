@@ -21,6 +21,7 @@ import Automation from "@/pages/Automation";
 import Billing from "@/pages/Billing";
 import Keywords from "@/pages/Keywords";
 import Optimizer from "@/pages/Optimizer";
+import AIVisibility from "@/pages/AIVisibility";
 
 function App() {
   return (
@@ -41,6 +42,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/sites" element={<Sites />} />
               <Route path="/audit" element={<Audit />} />
+              <Route path="/ai-visibility" element={<AIVisibility />} />
               <Route path="/keywords" element={<Keywords />} />
               <Route path="/optimizer" element={<Optimizer />} />
               <Route path="/generator" element={<Generator />} />

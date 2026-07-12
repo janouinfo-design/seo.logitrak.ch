@@ -53,12 +53,53 @@ le classement Google et la visibilité dans les IA (ChatGPT, Gemini, Perplexity,
 - [x] **Génération asynchrone (jobs)** (2026-02-07) : nouveau endpoint `POST /api/content/generate-async` + `GET /api/content/jobs/{id}` pour bypasser le timeout 60s de l'ingress K8s. Frontend Generator.jsx fait du polling toutes les 3s avec toast "Génération en cours…". Plus de timeout possible.
 - [x] **Auto-publish GitHub depuis le Générateur** (2026-02-07) : checkbox "⚡ Publier automatiquement sur GitHub après génération" dans la page Générateur. Quand cochée + site avec GitHub configuré → la génération auto-push le brouillon. Désactivée + grisée si GitHub pas configuré.
 
+## Pivot produit (2026-06) — "Agent Marketing IA d'entreprise"
+Le produit pivote d'un outil SEO vers un Directeur Marketing IA autonome.
+Nom final : EN RÉFLEXION (l'utilisateur veut analyser 50-100 propositions : domaines .com/.ai/.io,
+réseaux sociaux, marques CH/UE/WIPO/US, prononciation, mémorisation). "Vela" DÉCONSEILLÉ
+(conflits Vela Systems Inc. ~19 marques logicielles + Vela Software Group). Garder
+"LOGI SEO Booster" en placeholder jusqu'à validation explicite.
+Critère de décision produit : "Est-ce que cela nous rapproche du meilleur Directeur Marketing IA du marché ?"
+Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
+
+- [x] **AI Visibility Center** (2026-06-12) : module GEO complet, remplace le simple "GEO Score".
+  Backend `/app/backend/ai_visibility.py` (module séparé) + routes dans server.py :
+  `POST /api/sites/{id}/ai-visibility` (job async, poll via /content/jobs/{job_id}),
+  `GET .../ai-visibility/latest`, `GET .../ai-visibility/history`. Collection `ai_visibility_reports`.
+  Pipeline : crawl pages clés (sitemap/BFS + fallback Playwright SPA) → analyses déterministes
+  (Schema.org JSON-LD, Knowledge Graph/sameAs, lisibilité IA/chunking, fraîcheur, signaux EEAT)
+  → analyse LLM Claude (entité, SEO sémantique, requêtes de test, explications, actions priorisées
+  avec gains estimés) → **tests de citation RÉELS** sur ChatGPT (gpt-4o), Claude et Gemini
+  (12 requêtes) ; Perplexity/Copilot/Mistral/DeepSeek estimés (badgés "Estimé").
+  10 scores : AI Visibility (global), AI Citation, AI Trust, EEAT, Entity, Schema,
+  Knowledge Graph, SEO Sémantique, Lisibilité IA, Fraîcheur.
+  Frontend : page `/ai-visibility` (`AIVisibility.jsx`), nav "AI Visibility" (icône Radar).
+  Testé e2e sur logirent.ch : score 43/100, diagnostic + 6 actions pertinentes.
+
+## Backlog Sprint 1 (ordre validé par l'utilisateur, 2026-06)
+- [ ] 🥈 **Keyword Intelligence Engine 2.0** (P0 — prochain) : après analyse du site → meilleurs
+  mots-clés par potentiel/rentabilité, contenus à créer, pages locales manquantes, concurrents en
+  place, mots-clés faciles à conquérir ; puis génération auto de clusters, FAQ, articles,
+  landing pages, pages locales.
+- [ ] 🥉 **AI Business Analyzer** (P0) : comprendre l'entreprise AVANT de recommander
+  (activité, produits, services, cible, villes, concurrents, positionnement).
+  Note : `ai_visibility.py` produit déjà un `business` summary réutilisable comme base.
+- [ ] **Repositionnement UI "Agent Marketing IA"** : dashboard, storytelling, agents IA
+  (SEO Agent, GEO Agent, Content Agent, Social Agent). Nom placeholder inchangé.
+- [ ] **Workflow Builder enrichi** : déclencheurs = perte de positions, baisse de trafic,
+  nouvelle page, concurrent progresse, backlink perdu, 404, Core Web Vitals dégradés,
+  nouvelle tendance, FAQ concurrent → actions (analyser, réécrire, publier, alerter).
+- [ ] **Réseaux sociaux Meta** : Facebook Pages + Instagram + Threads — préparer architecture/UI ;
+  connexion réelle dès que l'utilisateur fournit App ID/Secret Meta (pas encore disponibles).
+- [ ] Recherche de nom : générer 50-100 propositions avec critères (domaines, marques, prononciation).
+
 ## Backlog / Phase 2 (P0)
-- [ ] Génération en lot : page batch pour générer 10-20 articles d'un coup (Niveau 2)
-- [ ] Calendrier éditorial : cron auto-génère + auto-publie 1 article tous les X jours (Niveau 3)
-- [ ] LinkedIn auto-posting : OAuth + UGC Post API (playbook récupéré, prêt à implémenter)
+- [x] Génération en lot (batch) — fait (Automation.jsx)
+- [x] Calendrier éditorial cron — fait
+- [x] LinkedIn auto-posting — fait
 - [ ] Vraie Wix App (App ID + Secret) via Wix Dev Center pour OAuth multi-comptes
 - [ ] Alerte email auto si une page tracée chute de >5 positions sur Google
+- [ ] Vérification utilisateur du checkout Stripe (carte test 4242…) — toujours en attente
 
 ## Backlog / Phase 3 (P1)
 - [ ] Comparateur de versions visuel (diff)

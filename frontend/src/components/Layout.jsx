@@ -18,6 +18,7 @@ import {
   KeyRound,
   Wand2,
   BookOpen,
+  Radar,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -32,6 +33,7 @@ const nav = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true, testid: "nav-dashboard" },
   { to: "/sites", icon: Globe, label: "Sites", testid: "nav-sites" },
   { to: "/audit", icon: Search, label: "Audit SEO", testid: "nav-audit" },
+  { to: "/ai-visibility", icon: Radar, label: "AI Visibility", testid: "nav-ai-visibility" },
   { to: "/keywords", icon: KeyRound, label: "Mots-clés", testid: "nav-keywords" },
   { to: "/optimizer", icon: Wand2, label: "Optimiseur de pages", testid: "nav-optimizer" },
   { to: "/generator", icon: Sparkles, label: "Générateur IA", testid: "nav-generator" },
