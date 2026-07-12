@@ -83,6 +83,22 @@ export default function Login() {
             </button>
           </form>
 
+          <div className="mt-6 border border-slate-200 bg-slate-50 rounded-md p-4" data-testid="login-demo-credentials">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Compte démo</div>
+            <div className="text-sm text-slate-700 font-mono">
+              <div>Email : <span className="font-semibold text-slate-900">demo@logirent.fr</span></div>
+              <div>Mot de passe : <span className="font-semibold text-slate-900">demo1234</span></div>
+            </div>
+            <button
+              type="button"
+              data-testid="login-demo-fill-button"
+              onClick={() => { setEmail("demo@logirent.fr"); setPassword("demo1234"); }}
+              className="mt-2 text-xs font-medium text-[#002FA7] hover:underline"
+            >
+              Remplir automatiquement →
+            </button>
+          </div>
+
           <p className="mt-6 text-sm text-slate-600">
             Pas encore de compte ?{" "}
             <Link to="/register" className="text-[#002FA7] font-medium hover:underline" data-testid="login-to-register-link">
