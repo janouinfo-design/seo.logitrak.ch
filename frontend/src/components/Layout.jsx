@@ -19,6 +19,7 @@ import {
   Wand2,
   BookOpen,
   Radar,
+  BrainCircuit,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -35,6 +36,7 @@ const nav = [
   { to: "/audit", icon: Search, label: "Audit SEO", testid: "nav-audit" },
   { to: "/ai-visibility", icon: Radar, label: "AI Visibility", testid: "nav-ai-visibility" },
   { to: "/keywords", icon: KeyRound, label: "Mots-clés", testid: "nav-keywords" },
+  { to: "/keyword-intelligence", icon: BrainCircuit, label: "Keyword Intelligence", testid: "nav-keyword-intelligence" },
   { to: "/optimizer", icon: Wand2, label: "Optimiseur de pages", testid: "nav-optimizer" },
   { to: "/generator", icon: Sparkles, label: "Générateur IA", testid: "nav-generator" },
   { to: "/automation", icon: Rocket, label: "Automatisation", testid: "nav-automation" },

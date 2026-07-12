@@ -77,11 +77,21 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   Testé e2e sur logirent.ch : score 43/100, diagnostic + 6 actions pertinentes.
 
 ## Backlog Sprint 1 (ordre validé par l'utilisateur, 2026-06)
-- [ ] 🥈 **Keyword Intelligence Engine 2.0** (P0 — prochain) : après analyse du site → meilleurs
-  mots-clés par potentiel/rentabilité, contenus à créer, pages locales manquantes, concurrents en
-  place, mots-clés faciles à conquérir ; puis génération auto de clusters, FAQ, articles,
-  landing pages, pages locales.
-- [ ] 🥉 **AI Business Analyzer** (P0) : comprendre l'entreprise AVANT de recommander
+- [x] 🥈 **Keyword Intelligence Engine 2.0** (2026-06-12) : backend `/app/backend/keyword_intelligence.py`
+  (réutilise `ai_visibility.fetch_pages`). 2 appels LLM : (1) Business Profile (activité, produits,
+  cibles, zones, positionnement, concurrents — stocké dans collection `business_profiles`, brique
+  de l'AI Business Analyzer), (2) Intelligence complète : clusters scorés (potentiel 0-100,
+  difficulté, rentabilité, volume, quick_win), quick wins, top opportunités, plan de contenu
+  (types compatibles générateur), pages locales manquantes, concurrents + comment les dépasser.
+  Routes : `POST /api/sites/{id}/keyword-intelligence` (job async), `GET .../latest`.
+  Collection `keyword_intelligence_reports`. Frontend : page `/keyword-intelligence`
+  (`KeywordIntelligence.jsx`), nav "Keyword Intelligence" (icône BrainCircuit).
+  Boutons : ⭐ sauvegarder mot-clé (→ /keywords/saved), "Générer ce contenu" en 1 clic
+  (→ /content/generate-async avec polling + toast). Testé e2e sur logirent.ch :
+  6 clusters, 8 quick wins, 10 contenus, 5 pages locales, 6 concurrents — l'IA a détecté
+  le désalignement stratégique B2C/B2B des mots-clés suivis.
+- [x] Identifiants démo affichés sur la page de connexion + bouton "Remplir automatiquement" (2026-06-12).
+- [ ] 🥉 **AI Business Analyzer** (P0 — prochain) : comprendre l'entreprise AVANT de recommander
   (activité, produits, services, cible, villes, concurrents, positionnement).
   Note : `ai_visibility.py` produit déjà un `business` summary réutilisable comme base.
 - [ ] **Repositionnement UI "Agent Marketing IA"** : dashboard, storytelling, agents IA

@@ -3863,6 +3863,66 @@ async def get_ai_visibility_history(site_id: str, user=Depends(get_current_user)
 
 
 # ---------------------------------------------------------------------------
+# Keyword Intelligence Engine 2.0
+# ---------------------------------------------------------------------------
+@api.post("/sites/{site_id}/keyword-intelligence")
+async def start_keyword_intelligence(site_id: str, user=Depends(get_current_user)):
+    """Lance une analyse Keyword Intelligence asynchrone. Poll via /content/jobs/{job_id}."""
+    site = await _get_user_site(site_id, user)
+    job_id = gen_id()
+    await db.generation_jobs.insert_one({
+        "id": job_id,
+        "user_id": user["id"],
+        "type": "keyword_intelligence",
+        "status": "pending",
+        "result": None,
+        "error": None,
+        "created_at": now_iso(),
+        "completed_at": None,
+    })
+
+    async def _bg():
+        try:
+            from keyword_intelligence import run_keyword_intelligence
+            saved = await db.saved_keywords.find({"site_id": site_id, "user_id": user["id"]}, {"keyword": 1}).to_list(100)
+            report = await run_keyword_intelligence(site, [s["keyword"] for s in saved], EMERGENT_LLM_KEY)
+            report.update({
+                "id": gen_id(),
+                "site_id": site_id,
+                "site_name": site.get("name"),
+                "created_at": now_iso(),
+            })
+            await db.keyword_intelligence_reports.insert_one({**report, "user_id": user["id"]})
+            await db.business_profiles.update_one(
+                {"site_id": site_id, "user_id": user["id"]},
+                {"$set": {"profile": report.get("business_profile"), "updated_at": now_iso()}},
+                upsert=True,
+            )
+            await db.generation_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "completed", "result": report, "completed_at": now_iso()}},
+            )
+        except Exception as exc:
+            logger.exception("Keyword intelligence analysis failed")
+            await db.generation_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "failed", "error": str(exc), "completed_at": now_iso()}},
+            )
+
+    asyncio.create_task(_bg())
+    return {"job_id": job_id, "status": "pending"}
+
+
+@api.get("/sites/{site_id}/keyword-intelligence/latest")
+async def get_latest_keyword_intelligence(site_id: str, user=Depends(get_current_user)):
+    await _get_user_site(site_id, user)
+    rep = await db.keyword_intelligence_reports.find_one(
+        {"site_id": site_id, "user_id": user["id"]}, {"_id": 0, "user_id": 0}, sort=[("created_at", -1)]
+    )
+    return rep or {}
+
+
+# ---------------------------------------------------------------------------
 # Scheduler: daily rank snapshot at 04:00 UTC for every site that has GSC config
 # ---------------------------------------------------------------------------
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
