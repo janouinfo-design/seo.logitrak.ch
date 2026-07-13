@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { api, API } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
-import { Save, Send, ArrowLeft, History, Eye, Pencil, CheckCircle2, AlertCircle, Loader2, X, Download, FileCode, Github, ExternalLink, Linkedin } from "lucide-react";
+import { Save, Send, ArrowLeft, History, Eye, Pencil, CheckCircle2, AlertCircle, Loader2, X, Download, FileCode, Github, ExternalLink, Linkedin, Image as ImageIcon, RefreshCw } from "lucide-react";
 import { useSites } from "@/contexts/SiteContext";
 import SocialPublishPanel from "@/components/SocialPublishPanel";
 import {
@@ -74,6 +74,7 @@ export default function DraftDetail() {
   const [publishingGh, setPublishingGh] = useState(false);
   const [publishingLi, setPublishingLi] = useState(false);
   const [liStatus, setLiStatus] = useState(null);
+  const [coverBusy, setCoverBusy] = useState(false);
   const [versions, setVersions] = useState([]);
 
   const draftSite = sites.find((s) => s.id === draft?.site_id);
@@ -179,6 +180,19 @@ export default function DraftDetail() {
       load();
     } catch {
       toast.error("Échec du rollback");
+    }
+  };
+
+  const onGenerateImage = async () => {
+    setCoverBusy(true);
+    try {
+      await api.post(`/drafts/${id}/generate-image`);
+      toast.success("Image de couverture mise à jour ✓");
+      load();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Échec de génération de l'image");
+    } finally {
+      setCoverBusy(false);
     }
   };
 
@@ -458,6 +472,44 @@ export default function DraftDetail() {
 
         {/* Side panel */}
         <div className="space-y-4">
+          <div className="border border-slate-200 bg-white rounded-md p-5" data-testid="draft-cover-panel">
+            <div className="overline mb-3 flex items-center gap-1.5">
+              <ImageIcon className="w-3 h-3" /> Image de couverture
+            </div>
+            {draft.cover_image_url ? (
+              <>
+                <img
+                  src={draft.cover_image_url}
+                  alt={draft.cover_image_alt || draft.title}
+                  className="w-full rounded-md mb-1.5 object-cover max-h-44"
+                  data-testid="draft-cover-image"
+                />
+                {draft.cover_image_credit && (
+                  <a
+                    href={draft.cover_image_credit_url || "#"}
+                    target="_blank"
+                    rel="noreferrer nofollow"
+                    className="text-[10px] text-slate-400 hover:underline block mb-2 text-right"
+                  >
+                    {draft.cover_image_credit}
+                  </a>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-slate-500 mb-3">
+                Aucune image. Générez-en une automatiquement selon le sujet (photo pro Pexels) — insérée dans l&apos;article publié et utilisée pour Facebook/Instagram.
+              </p>
+            )}
+            <button
+              onClick={onGenerateImage}
+              disabled={coverBusy}
+              data-testid="draft-generate-image-button"
+              className="w-full inline-flex items-center justify-center gap-2 border border-slate-300 hover:border-[#002FA7] hover:text-[#002FA7] text-slate-700 px-3 py-2 rounded-md text-xs font-medium transition-colors"
+            >
+              {coverBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {draft.cover_image_url ? "Régénérer l'image" : "Générer une image"}
+            </button>
+          </div>
           <SocialPublishPanel draft={draft} onPublished={load} />
           <div className="border border-slate-200 bg-white rounded-md p-5">
             <div className="overline mb-3">Métadonnées SEO</div>

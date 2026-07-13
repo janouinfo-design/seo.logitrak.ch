@@ -50,6 +50,10 @@ export default function SocialPublishPanel({ draft, onPublished }) {
     api.get("/gbp/status").then(({ data }) => setGbp(data)).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (draft?.cover_image_url) setIgImage(draft.cover_image_url);
+  }, [draft?.cover_image_url]);
+
   const connect = async (path) => {
     try {
       const { data } = await api.get(path);
@@ -167,7 +171,7 @@ export default function SocialPublishPanel({ draft, onPublished }) {
                   <AlertDialogHeader>
                     <AlertDialogTitle className="flex items-center gap-2"><Instagram className="w-5 h-5 text-[#E4405F]" /> Publier sur Instagram ?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Instagram exige une image. Collez l&apos;URL publique d&apos;une image (JPEG recommandé). L&apos;IA génèrera la légende automatiquement.
+                      Instagram exige une image. {draft.cover_image_url ? "L'image de couverture de l'article est pré-remplie — vous pouvez la remplacer." : "Collez l'URL publique d'une image (JPEG recommandé)."} L&apos;IA génèrera la légende automatiquement.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   {igPages.length > 1 && (

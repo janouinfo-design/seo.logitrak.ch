@@ -157,6 +157,13 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   GBP_CLIENT_ID/SECRET/REDIRECT_URI (fallback sur GOOGLE_OAUTH_CLIENT_ID/SECRET). GBP nécessite
   l'approbation Google « Business Profile APIs access request » + activation des 3 API My Business.
   En preview : clés FACTICES (OAuth complet non testable). Threads non implémenté.
+- [x] **Images de couverture automatiques (Pexels)** (2026-06-13) : à chaque génération d'article,
+  Claude produit un `image_query` (anglais) et le backend récupère une photo Pexels paysage
+  (`_fetch_pexels_cover`, dégradation gracieuse sans clé). Bouton « Régénérer l'image » dans
+  DraftDetail (`POST /api/drafts/{id}/generate-image`, page+1 pour varier). Image insérée dans
+  le HTML publié (figure + crédit photographe + og:image) et utilisée par défaut pour les posts
+  Facebook/Instagram. Champs draft : cover_image_url/alt/credit/credit_url, image_query.
+  Env : PEXELS_API_KEY (clé gratuite pexels.com/api) — VIDE en preview, à configurer sur le VPS.
 - [ ] Recherche de nom : générer 50-100 propositions avec critères (domaines, marques, prononciation).
 
 ## Backlog / Phase 2 (P0)

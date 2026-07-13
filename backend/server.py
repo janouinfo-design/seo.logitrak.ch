@@ -296,6 +296,11 @@ class DraftPublic(BaseModel):
     gbp_post_name: Optional[str] = None
     gbp_post_url: Optional[str] = None
     gbp_posted_at: Optional[str] = None
+    cover_image_url: Optional[str] = None
+    cover_image_alt: Optional[str] = None
+    cover_image_credit: Optional[str] = None
+    cover_image_credit_url: Optional[str] = None
+    image_query: Optional[str] = None
 
 
 class PublishRequest(BaseModel):
@@ -1205,7 +1210,8 @@ FORMAT DE RÉPONSE OBLIGATOIRE (JSON strict, aucun texte avant/après) :
   "meta_description": "Méta description 140-160 caractères",
   "body_markdown": "Contenu complet en markdown avec H2/H3, paragraphes, listes, tableaux",
   "faq": [{"question": "...", "answer": "..."}],
-  "keywords": ["mot-clé 1", "mot-clé 2", ...]
+  "keywords": ["mot-clé 1", "mot-clé 2", ...],
+  "image_query": "2-4 English words describing the ideal cover photo for this article (stock photo search)"
 }"""
 
 
@@ -1220,6 +1226,66 @@ def _type_hint(t: str) -> str:
         "faq": "Page FAQ exhaustive (10-15 Q/R)",
         "service_description": "Description de service commercial optimisée SEO",
     }.get(t, "Contenu SEO")
+
+
+# --- Cover images (Pexels stock photos) ---
+PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
+
+
+async def _fetch_pexels_cover(query: str, page: int = 1) -> Optional[dict]:
+    """Search Pexels for a landscape cover photo. Returns draft cover fields or None."""
+    if not PEXELS_API_KEY or not query:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(
+                "https://api.pexels.com/v1/search",
+                headers={"Authorization": PEXELS_API_KEY},
+                params={"query": query, "orientation": "landscape", "size": "large",
+                        "per_page": 1, "page": page},
+            )
+        if r.status_code != 200:
+            logger.warning("Pexels search failed (%s): %s", r.status_code, r.text[:200])
+            return None
+        photos = r.json().get("photos") or []
+        if not photos:
+            return None
+        p = photos[0]
+        src = p.get("src") or {}
+        url = src.get("large2x") or src.get("large") or src.get("original")
+        if not url:
+            return None
+        return {
+            "cover_image_url": url,
+            "cover_image_alt": p.get("alt") or query,
+            "cover_image_credit": f"Photo par {p.get('photographer', 'Pexels')} sur Pexels",
+            "cover_image_credit_url": p.get("url"),
+            "cover_image_page": page,
+            "image_query": query,
+        }
+    except Exception as exc:
+        logger.warning("Pexels fetch error: %s", exc)
+        return None
+
+
+async def _derive_image_query(draft: dict) -> str:
+    """Derive a short English stock-photo query from the article title via Claude."""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"imgq-{draft.get('id')}",
+            system_message="Tu réponds uniquement avec 2-4 mots ANGLAIS pour une recherche de photo de stock. Rien d'autre.",
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        resp = await chat.send_message(UserMessage(
+            text=f"2-4 mots-clés anglais de photo de stock pour illustrer cet article : {draft.get('title', '')}"
+        ))
+        q = (resp or "").strip().strip('"').strip("'")
+        if q and len(q) <= 60:
+            return q
+    except Exception as exc:
+        logger.warning("Image query derivation failed: %s", exc)
+    return (draft.get("title") or "business")[:50]
 
 
 @api.post("/content/generate", response_model=DraftPublic)
@@ -1345,8 +1411,30 @@ Réponds en JSON strict selon le format imposé."""
         "wix_draft_id": None,
         "wix_published_at": None,
     }
+    cover = await _fetch_pexels_cover(data.get("image_query") or draft["title"])
+    if cover:
+        draft.update(cover)
     await db.drafts.insert_one(draft)
     return DraftPublic(**{k: v for k, v in draft.items() if k != "user_id"})
+
+
+@api.post("/drafts/{draft_id}/generate-image")
+async def generate_draft_cover(draft_id: str, user=Depends(get_current_user)):
+    """Fetch (or refresh) the Pexels cover image for a draft."""
+    if not PEXELS_API_KEY:
+        raise HTTPException(503, "Pexels non configuré. Ajoutez PEXELS_API_KEY dans backend/.env (clé gratuite sur pexels.com/api).")
+    d = await db.drafts.find_one({"id": draft_id, "user_id": user["id"]}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Brouillon introuvable")
+    query = d.get("image_query") or await _derive_image_query(d)
+    page = int(d.get("cover_image_page") or 0) + 1
+    cover = await _fetch_pexels_cover(query, page=page)
+    if not cover and page > 1:
+        cover = await _fetch_pexels_cover(query, page=1)
+    if not cover:
+        raise HTTPException(404, f"Aucune photo trouvée pour « {query} ». Réessayez plus tard ou modifiez le titre.")
+    await db.drafts.update_one({"id": draft_id}, {"$set": {**cover, "updated_at": now_iso()}})
+    return cover
 
 
 # ---------------------------------------------------------------------------
@@ -1559,6 +1647,18 @@ def _render_html(draft: dict, site: dict) -> str:
             ],
         }
         faq_jsonld = f'<script type="application/ld+json">{_json.dumps(jsonld_obj, ensure_ascii=False)}</script>'
+    cover_html = ""
+    og_image = ""
+    if draft.get("cover_image_url"):
+        _cu = draft["cover_image_url"]
+        _alt = (draft.get("cover_image_alt") or title).replace('"', "'")
+        _credit = draft.get("cover_image_credit") or ""
+        _credit_url = draft.get("cover_image_credit_url") or "#"
+        cover_html = (
+            f'<figure class="cover"><img src="{_cu}" alt="{_alt}" loading="eager">'
+            f'<figcaption><a href="{_credit_url}" rel="noopener nofollow" target="_blank">{_credit}</a></figcaption></figure>'
+        )
+        og_image = f'\n  <meta property="og:image" content="{_cu}">'
     return f"""<!doctype html>
 <html lang="fr">
 <head>
@@ -1571,7 +1671,7 @@ def _render_html(draft: dict, site: dict) -> str:
   <meta property="og:title" content="{meta_title}">
   <meta property="og:description" content="{meta_desc}">
   <meta property="og:type" content="article">
-  <meta property="og:url" content="{canonical}">
+  <meta property="og:url" content="{canonical}">{og_image}
   <meta name="generator" content="LOGI SEO Booster">
   {faq_jsonld}
   <style>
@@ -3066,7 +3166,7 @@ async def publish_draft_to_facebook(draft_id: str, req: Optional[SocialPublishRe
     post_text = await generate_social_post_text(EMERGENT_LLM_KEY, d, "facebook")
     result = await meta_publish_facebook(
         page["id"], page_token, post_text,
-        link=d.get("github_public_url"), image_url=req.image_url,
+        link=d.get("github_public_url"), image_url=req.image_url or d.get("cover_image_url"),
     )
     await db.drafts.update_one({"id": draft_id}, {"$set": {
         "facebook_post_id": result.get("post_id"),
@@ -3079,11 +3179,12 @@ async def publish_draft_to_facebook(draft_id: str, req: Optional[SocialPublishRe
 @api.post("/drafts/{draft_id}/publish-instagram")
 async def publish_draft_to_instagram(draft_id: str, req: Optional[SocialPublishRequest] = None, user=Depends(get_current_user)):
     req = req or SocialPublishRequest()
-    if not req.image_url:
-        raise HTTPException(400, "Instagram exige une image. Fournissez l'URL publique d'une image (JPEG recommandé).")
     d = await db.drafts.find_one({"id": draft_id, "user_id": user["id"]}, {"_id": 0})
     if not d:
         raise HTTPException(404, "Brouillon introuvable")
+    image_url = req.image_url or d.get("cover_image_url")
+    if not image_url:
+        raise HTTPException(400, "Instagram exige une image. Générez une image de couverture ou fournissez l'URL publique d'une image (JPEG recommandé).")
     page = await _get_meta_page(user["id"], req.page_id, require_instagram=True)
     page_token = dec(page["token"])
 
@@ -3091,7 +3192,7 @@ async def publish_draft_to_instagram(draft_id: str, req: Optional[SocialPublishR
     caption = await generate_social_post_text(EMERGENT_LLM_KEY, d, "instagram")
     if d.get("github_public_url"):
         caption += f"\n\n🔗 Lien dans notre bio ou : {d['github_public_url']}"
-    result = await meta_publish_instagram(page["instagram_id"], page_token, caption, req.image_url)
+    result = await meta_publish_instagram(page["instagram_id"], page_token, caption, image_url)
     await db.drafts.update_one({"id": draft_id}, {"$set": {
         "instagram_post_id": result.get("media_id"),
         "instagram_post_url": result.get("post_url"),
