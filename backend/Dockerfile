@@ -11,7 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+# litellm est déjà une dépendance directe d'emergentintegrations (même URL) :
+# on retire la ligne dupliquée pour éviter le conflit de résolution pip.
+RUN grep -v "^litellm @" requirements.txt > /tmp/req.txt \
+    && pip install -r /tmp/req.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
 
 # Chromium pour le crawl des sites SPA (AI Visibility / Audit)
 RUN playwright install --with-deps chromium
