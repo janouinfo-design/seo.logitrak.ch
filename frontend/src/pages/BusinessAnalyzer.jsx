@@ -118,6 +118,7 @@ export default function BusinessAnalyzer() {
       positioning: profile.positioning || "",
       cities_zones: (profile.cities_zones || []).join(", "),
       business_model: profile.business_model || "",
+      competitors: (profile.competitors || []).map((c) => c.name).filter(Boolean).join("\n"),
     });
     setEditing(true);
   };
@@ -125,12 +126,19 @@ export default function BusinessAnalyzer() {
   const saveEdit = async () => {
     setSaving(true);
     try {
+      const names = form.competitors.split("\n").map((n) => n.trim()).filter(Boolean);
+      const existing = profile.competitors || [];
+      const mergedCompetitors = names.map((n) => {
+        const found = existing.find((c) => (c.name || "").toLowerCase() === n.toLowerCase());
+        return found || { name: n };
+      });
       const payload = {
         activity: form.activity,
         description: form.description,
         positioning: form.positioning,
         cities_zones: form.cities_zones.split(",").map((c) => c.trim()).filter(Boolean),
         business_model: form.business_model,
+        competitors: mergedCompetitors,
       };
       const { data } = await api.put(`/sites/${activeSite.id}/business-profile`, { profile: payload });
       setDoc((d) => ({ ...d, profile: data.profile, edited: true }));
@@ -293,6 +301,13 @@ export default function BusinessAnalyzer() {
                     <input value={form.business_model} onChange={(e) => setForm({ ...form, business_model: e.target.value })}
                       className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" data-testid="bizanalyzer-input-model" />
                   </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700 mb-1 block">Vos vrais concurrents (un par ligne)</label>
+                  <textarea value={form.competitors} onChange={(e) => setForm({ ...form, competitors: e.target.value })} rows={5}
+                    placeholder={"Myrentcar\nRenthub\nFleetGuru"}
+                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono" data-testid="bizanalyzer-input-competitors" />
+                  <p className="text-[11px] text-slate-500 mt-1">Cette liste alimente la recherche de mots-clés, Keyword Intelligence et les futures analyses concurrentielles.</p>
                 </div>
               </div>
             )}

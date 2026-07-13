@@ -4066,6 +4066,40 @@ Réponds en JSON STRICT :
 
 
 # ---------------------------------------------------------------------------
+# Pré-remplissage intelligent pour la recherche de mots-clés
+# ---------------------------------------------------------------------------
+@api.get("/sites/{site_id}/keyword-prefill")
+async def get_keyword_prefill(site_id: str, user=Depends(get_current_user)):
+    """Thématiques, zones (villes/régions/pays) et concurrents issus du profil business et du dernier rapport Keyword Intelligence."""
+    await _get_user_site(site_id, user)
+    prof = ((await db.business_profiles.find_one({"site_id": site_id, "user_id": user["id"]})) or {}).get("profile") or {}
+    ki = await db.keyword_intelligence_reports.find_one(
+        {"site_id": site_id, "user_id": user["id"]}, sort=[("created_at", -1)]
+    ) or {}
+
+    def dedupe(items):
+        seen, out = set(), []
+        for x in items:
+            x = (x or "").strip()
+            if x and x.lower() not in seen:
+                seen.add(x.lower())
+                out.append(x)
+        return out
+
+    themes = dedupe(
+        [c.get("name") for c in ki.get("clusters", [])]
+        + [ps.get("name") for ps in prof.get("products_services", [])]
+        + [prof.get("activity")]
+    )
+    zones = dedupe(prof.get("cities_zones") or [])
+    competitors = dedupe(
+        [c.get("name") for c in prof.get("competitors", [])]
+        + [c.get("name") for c in ki.get("competitors", [])]
+    )
+    return {"themes": themes[:8], "zones": zones[:10], "competitors": competitors[:10]}
+
+
+# ---------------------------------------------------------------------------
 # Scheduler: daily rank snapshot at 04:00 UTC for every site that has GSC config
 # ---------------------------------------------------------------------------
 from apscheduler.schedulers.asyncio import AsyncIOScheduler

@@ -36,6 +36,33 @@ export default function Keywords() {
   // Selection state: key = `${clusterIntent}::${keyword}`
   const [selected, setSelected] = useState(new Set());
   const [selectedSaved, setSelectedSaved] = useState(new Set());
+  const [prefill, setPrefill] = useState({ themes: [], zones: [], competitors: [] });
+
+  useEffect(() => {
+    if (!activeSite) return;
+    api.get(`/sites/${activeSite.id}/keyword-prefill`)
+      .then(({ data }) => setPrefill(data))
+      .catch(() => setPrefill({ themes: [], zones: [], competitors: [] }));
+  }, [activeSite]);
+
+  const addCompetitor = (name) => {
+    setCompetitors((prev) => {
+      const list = prev.split(",").map((s) => s.trim()).filter(Boolean);
+      if (list.some((x) => x.toLowerCase() === name.toLowerCase())) return prev;
+      return [...list, name].join(", ");
+    });
+  };
+
+  const Chip = ({ label, onClick, testid }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testid}
+      className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-[#002FA7] font-medium border border-[#002FA7]/15 hover:bg-[#002FA7] hover:text-white transition-colors"
+    >
+      {label}
+    </button>
+  );
 
   const loadSaved = async () => {
     if (!activeSite) return;
@@ -233,16 +260,30 @@ export default function Keywords() {
             placeholder="Ex : location meublée courte durée"
             className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
           />
+          {prefill.themes.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-1.5" data-testid="kw-theme-chips">
+              {prefill.themes.map((t, i) => (
+                <Chip key={i} label={t} onClick={() => setTheme(t)} testid={`kw-theme-chip-${i}`} />
+              ))}
+            </div>
+          )}
         </div>
         <div>
-          <label className="text-xs font-medium text-slate-700 mb-1.5 block">Ville / zone</label>
+          <label className="text-xs font-medium text-slate-700 mb-1.5 block">Ville / région / pays</label>
           <input
             data-testid="kw-city-input"
             value={city}
             onChange={(e) => setCity(e.target.value)}
-            placeholder="Lyon"
+            placeholder="Genève, Suisse romande, Suisse…"
             className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
           />
+          {prefill.zones.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-1.5" data-testid="kw-zone-chips">
+              {prefill.zones.map((z, i) => (
+                <Chip key={i} label={z} onClick={() => setCity(z)} testid={`kw-zone-chip-${i}`} />
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <label className="text-xs font-medium text-slate-700 mb-1.5 block">Concurrents (séparés par virgules)</label>
@@ -250,9 +291,16 @@ export default function Keywords() {
             data-testid="kw-competitors-input"
             value={competitors}
             onChange={(e) => setCompetitors(e.target.value)}
-            placeholder="airbnb, booking…"
+            placeholder="Myrentcar, Renthub…"
             className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
           />
+          {prefill.competitors.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-1.5" data-testid="kw-competitor-chips">
+              {prefill.competitors.map((c, i) => (
+                <Chip key={i} label={`+ ${c}`} onClick={() => addCompetitor(c)} testid={`kw-competitor-chip-${i}`} />
+              ))}
+            </div>
+          )}
         </div>
         <div className="md:col-span-4 flex justify-end">
           <button
