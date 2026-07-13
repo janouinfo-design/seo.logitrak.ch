@@ -140,8 +140,15 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
 - [ ] **Workflow Builder enrichi** : déclencheurs = perte de positions, baisse de trafic,
   nouvelle page, concurrent progresse, backlink perdu, 404, Core Web Vitals dégradés,
   nouvelle tendance, FAQ concurrent → actions (analyser, réécrire, publier, alerter).
-- [ ] **Réseaux sociaux Meta** : Facebook Pages + Instagram + Threads — préparer architecture/UI ;
-  connexion réelle dès que l'utilisateur fournit App ID/Secret Meta (pas encore disponibles).
+- [x] **Réseaux sociaux Meta + Google Business** (2026-06-13, testé 15/15) : OAuth + publication
+  Facebook Pages, Instagram et Google Business Profile. Backend : `social_publishing.py` +
+  routes dans server.py (`/api/meta/*`, `/api/gbp/*`, `POST /api/drafts/{id}/publish-facebook|instagram|gbp`).
+  Frontend : `SocialPublishPanel.jsx` dans DraftDetail (panneau « Réseaux sociaux »).
+  Tokens chiffrés (Fernet) dans `users.meta` (pages + token longue durée) et `users.gbp` (refresh token).
+  L'IA (Claude) rédige un post adapté par réseau. Env requis sur VPS : META_APP_ID/SECRET/REDIRECT_URI,
+  GBP_CLIENT_ID/SECRET/REDIRECT_URI (fallback sur GOOGLE_OAUTH_CLIENT_ID/SECRET). GBP nécessite
+  l'approbation Google « Business Profile APIs access request » + activation des 3 API My Business.
+  En preview : clés FACTICES (OAuth complet non testable). Threads non implémenté.
 - [ ] Recherche de nom : générer 50-100 propositions avec critères (domaines, marques, prononciation).
 
 ## Backlog / Phase 2 (P0)
