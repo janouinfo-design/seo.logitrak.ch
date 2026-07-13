@@ -4004,6 +4004,68 @@ async def update_business_profile(site_id: str, payload: BusinessProfileUpdate, 
 
 
 # ---------------------------------------------------------------------------
+# Suggestions de sujets (villes ciblées auto) pour le Générateur
+# ---------------------------------------------------------------------------
+@api.get("/sites/{site_id}/content-suggestions")
+async def get_content_suggestions(site_id: str, content_type: str = "article", user=Depends(get_current_user)):
+    """Propose des sujets adaptés au type de contenu, avec villes ciblées automatiquement.
+    Source 1 : rapport Keyword Intelligence (instantané). Source 2 : IA via profil business."""
+    site = await _get_user_site(site_id, user)
+    suggestions = []
+    ki = await db.keyword_intelligence_reports.find_one(
+        {"site_id": site_id, "user_id": user["id"]}, sort=[("created_at", -1)]
+    )
+    if ki:
+        for p in ki.get("content_plan", []):
+            if p.get("type") == content_type and p.get("title"):
+                suggestions.append({
+                    "topic": p["title"],
+                    "city": p.get("city"),
+                    "keywords": p.get("target_keywords") or [],
+                    "why": p.get("why"),
+                    "source": "keyword_intelligence",
+                })
+        if content_type == "page_locale":
+            for lp in ki.get("missing_local_pages", []):
+                if lp.get("suggested_title"):
+                    suggestions.append({
+                        "topic": lp["suggested_title"],
+                        "city": lp.get("city"),
+                        "keywords": [lp["target_keyword"]] if lp.get("target_keyword") else [],
+                        "why": f"Page locale manquante — {lp.get('service', '')}",
+                        "source": "keyword_intelligence",
+                    })
+    if len(suggestions) < 4:
+        prof_doc = await db.business_profiles.find_one({"site_id": site_id, "user_id": user["id"]})
+        profile = (prof_doc or {}).get("profile") or {}
+        try:
+            from keyword_intelligence import _llm
+            type_label = {
+                "article": "articles de blog",
+                "page_locale": "pages locales SEO",
+                "faq": "pages FAQ",
+                "service_description": "pages de description de service",
+            }.get(content_type, content_type)
+            ctx = {k: profile.get(k) for k in ("activity", "description", "cities_zones", "positioning") if profile.get(k)}
+            cities = ", ".join((profile.get("cities_zones") or [])[:8]) or "les villes pertinentes de son marché"
+            prompt = f"""Entreprise : {json.dumps(ctx, ensure_ascii=False) if ctx else site.get('name')}
+Site : {site.get('name')} — {site.get('base_url')}
+
+Propose 6 sujets de {type_label} à fort potentiel SEO pour cette entreprise, en ciblant automatiquement ses villes/zones ({cities}). Sujets précis, prêts à générer, dans la langue du site.
+
+Réponds en JSON STRICT :
+{{"suggestions": [{{"topic": "titre précis", "city": "ville ciblée ou null", "keywords": ["2-3 mots-clés"], "why": "intérêt en 1 phrase"}}]}}"""
+            res = await _llm(prompt, f"sugg-{site_id}-{content_type}", EMERGENT_LLM_KEY, max_tokens=3000, retries=2)
+            for s in (res.get("suggestions") or [])[:6]:
+                if s.get("topic"):
+                    s["source"] = "ai"
+                    suggestions.append(s)
+        except Exception:
+            logger.exception("Content suggestions LLM failed")
+    return {"suggestions": suggestions[:8]}
+
+
+# ---------------------------------------------------------------------------
 # Scheduler: daily rank snapshot at 04:00 UTC for every site that has GSC config
 # ---------------------------------------------------------------------------
 from apscheduler.schedulers.asyncio import AsyncIOScheduler

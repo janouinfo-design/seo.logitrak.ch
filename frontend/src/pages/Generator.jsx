@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 import { useSites } from "@/contexts/SiteContext";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
-import { Sparkles, Loader2, X } from "lucide-react";
+import { Sparkles, Loader2, X, Lightbulb, MapPin } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -46,6 +46,38 @@ export default function Generator() {
     auto_publish_github: false,
   });
   const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
+  const fetchSuggestions = async () => {
+    if (!activeSite) return toast.error("Sélectionnez d'abord un site");
+    setLoadingSuggestions(true);
+    setSuggestions([]);
+    try {
+      const { data } = await api.get(`/sites/${activeSite.id}/content-suggestions`, {
+        params: { content_type: form.content_type },
+      });
+      if (!data.suggestions?.length) {
+        toast.info("Aucune suggestion — lancez d'abord une analyse Keyword Intelligence ou Business Analyzer.");
+      }
+      setSuggestions(data.suggestions || []);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Impossible de charger les suggestions.");
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
+
+  const applySuggestion = (s) => {
+    setForm((f) => ({
+      ...f,
+      topic: s.topic || "",
+      city: s.city || "",
+      keywords: [...new Set([...(s.keywords || [])])],
+    }));
+    setSuggestions([]);
+    toast.success("Sujet appliqué — vous pouvez ajuster avant de générer.");
+  };
 
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v?.target ? v.target.value : v }));
 
@@ -157,7 +189,7 @@ export default function Generator() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-slate-700 mb-1.5 block">Type de contenu</label>
-              <Select value={form.content_type} onValueChange={set("content_type")}>
+              <Select value={form.content_type} onValueChange={(v) => { set("content_type")(v); setSuggestions([]); }}>
                 <SelectTrigger data-testid="gen-content-type-select"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {types.map((t) => (
@@ -180,7 +212,22 @@ export default function Generator() {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-slate-700 mb-1.5 block">Sujet principal *</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-slate-700 block">Sujet principal *</label>
+              <button
+                type="button"
+                onClick={fetchSuggestions}
+                disabled={loadingSuggestions}
+                data-testid="gen-suggest-button"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#002FA7] hover:underline disabled:opacity-50"
+              >
+                {loadingSuggestions ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Recherche de sujets…</>
+                ) : (
+                  <><Lightbulb className="w-3.5 h-3.5" /> Proposer des sujets (villes auto)</>
+                )}
+              </button>
+            </div>
             <input
               required
               data-testid="gen-topic-input"
@@ -189,6 +236,32 @@ export default function Generator() {
               placeholder="Ex : Location meublée courte durée à Lyon"
               className="w-full border border-slate-300 rounded-md px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
             />
+            {suggestions.length > 0 && (
+              <div className="mt-2 border border-[#002FA7]/20 bg-blue-50/40 rounded-md p-3 space-y-1.5" data-testid="gen-suggestions-panel">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                  Suggestions basées sur votre business — cliquez pour remplir
+                </div>
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => applySuggestion(s)}
+                    data-testid={`gen-suggestion-${i}`}
+                    className="w-full text-left bg-white border border-slate-200 rounded-md px-3 py-2 hover:border-[#002FA7]/50 hover:shadow-sm transition-all group"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-slate-900 group-hover:text-[#002FA7]">{s.topic}</span>
+                      {s.city && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-[#002FA7] bg-blue-50 px-2 py-0.5 rounded-full flex-shrink-0">
+                          <MapPin className="w-3 h-3" />{s.city}
+                        </span>
+                      )}
+                    </div>
+                    {s.why && <div className="text-[11px] text-slate-500 mt-0.5">{s.why}</div>}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
