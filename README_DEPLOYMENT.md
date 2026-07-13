@@ -51,7 +51,7 @@ chmod +x scripts/*.sh
 ## 2. Configurer les secrets
 
 ```bash
-cp .env.example .env
+cp env.production.example .env
 nano .env        # remplacer TOUS les CHANGE_ME
 chmod 600 .env
 ```

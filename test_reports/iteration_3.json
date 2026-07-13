@@ -1,0 +1,36 @@
+{
+  "summary": "Targeted validation of deployment fix: env.production.example presence, git-tracked status, required variables coverage, README reference update, and login regression. All 4 checks PASS.",
+  "checks": {
+    "file_exists_and_not_gitignored": {
+      "status": "PASS",
+      "detail": "/app/env.production.example exists. `git check-ignore env.production.example` exits with code 1 (not ignored). File is a valid candidate for commit."
+    },
+    "required_variables_present": {
+      "status": "PASS",
+      "detail": "All required variables found in env.production.example: MONGO_ROOT_USER, MONGO_ROOT_PASSWORD, DB_NAME, PUBLIC_URL, CORS_ORIGINS, JWT_SECRET, ENCRYPTION_KEY, EMERGENT_LLM_KEY, STRIPE_API_KEY. Bonus vars also included (JWT_ALGORITHM, GOOGLE_OAUTH_*, LINKEDIN_*)."
+    },
+    "readme_updated": {
+      "status": "PASS",
+      "detail": "README_DEPLOYMENT.md references `env.production.example` in setup step (`cp env.production.example .env`). No stale `.env.example` reference in setup instructions."
+    },
+    "login_regression": {
+      "status": "PASS",
+      "detail": "POST /api/auth/login with demo@logirent.fr/demo1234 returned HTTP 200 with a valid JWT token and user payload. Preview app not affected by deployment file additions."
+    }
+  },
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Root-cause fix is correct: Emergent platform excludes .env* patterns from GitHub push, so renaming to env.production.example (no leading dot) makes it push-safe. Verified via git check-ignore.",
+    "Consider adding a top-level note in README_DEPLOYMENT.md explaining WHY the file is named env.production.example instead of the more conventional .env.example (helps future maintainers)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "demo@logirent.fr / demo1234 (valid, 200 OK)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Deployment file fix (env.production.example + README update) validated. VPS deployment root cause resolved for future GitHub pushes."
+}
