@@ -1,0 +1,25 @@
+{
+  "summary": "Tested Meta (Facebook/Instagram) and Google Business Profile OAuth + publishing endpoints on backend, plus the SocialPublishPanel UI integration. All 15 backend pytest cases pass and the UI panel renders 3 'Connecter' buttons that correctly trigger /api/meta/login and /api/gbp/login. LinkedIn regression, drafts list, and draft editor are unaffected. OAuth end-to-end flow not testable because Meta/Google keys are dummy — expected per review request.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_social_publishing.py",
+    "/app/test_reports/pytest/social_publishing.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is >4500 lines — consider splitting Meta/GBP/LinkedIn OAuth into separate routers for maintainability",
+    "Meta redirect_uri.replace pattern (line 3028) is fragile — if the URI does not exactly contain '/api/meta/oauth/callback', the substitution silently fails; same issue on GBP (line 3186). Prefer computing frontend URL from a dedicated FRONTEND_URL env var",
+    "Callback endpoints raise HTTPException on invalid state; the returned JSON error is fine for tests but browsers see an ugly JSON page — consider RedirectResponse to /drafts?meta=error for better UX",
+    "gbp_status does not return refresh_token existence timestamp expiry — okay for MVP"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_social_publishing.py"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (all core checks pass)"},
+  "test_credentials": "demo@logirent.fr / demo1234 (preexisting)",
+  "seed_data_creation": "None — used existing draft f10807ff-f05f-44bd-9552-d53711817f98",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_social_publishing.py covers status, OAuth URL generation, invalid-state callbacks, publish error paths (401/400), disconnect idempotency, and LinkedIn/draft regression. Frontend Playwright verified panel + connect buttons trigger correct APIs. OAuth cannot go end-to-end because META_APP_ID/GBP_CLIENT_ID are dummies."
+}

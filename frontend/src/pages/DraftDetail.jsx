@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
 import { Save, Send, ArrowLeft, History, Eye, Pencil, CheckCircle2, AlertCircle, Loader2, X, Download, FileCode, Github, ExternalLink, Linkedin } from "lucide-react";
 import { useSites } from "@/contexts/SiteContext";
+import SocialPublishPanel from "@/components/SocialPublishPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -457,6 +458,7 @@ export default function DraftDetail() {
 
         {/* Side panel */}
         <div className="space-y-4">
+          <SocialPublishPanel draft={draft} onPublished={load} />
           <div className="border border-slate-200 bg-white rounded-md p-5">
             <div className="overline mb-3">Métadonnées SEO</div>
             <label className="text-xs font-medium text-slate-700 mb-1.5 flex justify-between">

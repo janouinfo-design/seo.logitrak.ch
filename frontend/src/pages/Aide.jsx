@@ -55,7 +55,7 @@ const STEPS = [
     title: "Valider et publier",
     color: "#D97706",
     items: [
-      { icon: FileText, to: "/drafts", label: "Brouillons", text: "Relisez chaque contenu généré, puis publiez : GitHub Pages (blog.logirent.ch) en 1 clic, post LinkedIn auto-généré, ou export ZIP/Wix." },
+      { icon: FileText, to: "/drafts", label: "Brouillons", text: "Relisez chaque contenu généré, puis publiez : GitHub Pages en 1 clic, posts auto-générés LinkedIn / Facebook / Instagram / Google Business Profile, ou export ZIP/Wix." },
     ],
   },
   {
@@ -95,6 +95,7 @@ const FAQ = [
   { q: "À quoi sert la page Mots-clés si j'ai Keyword Intelligence ?", a: "Mots-clés = recherche rapide par thème + votre liste de suivi. Keyword Intelligence = stratégie complète pilotée par l'IA (elle analyse votre business avant de recommander). Les mots-clés sauvegardés depuis les deux pages se retrouvent au même endroit." },
   { q: "Comment connecter Google Search Console ?", a: "Page Performance → « Connecter Google ». Vous verrez alors vos vraies positions, impressions et clics, et le suivi quotidien automatique s'activera." },
   { q: "Que se passe-t-il si j'atteins mon quota d'articles ?", a: "Le plan Free inclut 5 articles/mois. Passez sur un plan supérieur depuis la page Facturation pour continuer (paiement sécurisé Stripe)." },
+  { q: "Comment publier sur Facebook, Instagram et Google Business Profile ?", a: "Ouvrez un brouillon → panneau « Réseaux sociaux » → Connecter. Facebook/Instagram utilisent une app Meta (developers.facebook.com : META_APP_ID/SECRET dans le .env serveur) et Google Business un projet Google Cloud avec accès Business Profile approuvé (GBP_* dans le .env). Une fois connecté, l'IA rédige un post adapté à chaque réseau et le publie en 1 clic. Instagram nécessite l'URL d'une image publique." },
 ];
 
 export default function Aide() {

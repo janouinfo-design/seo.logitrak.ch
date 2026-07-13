@@ -59,11 +59,23 @@ export default function Drafts() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
+    let changed = false;
     if (searchParams.get("linkedin") === "connected") {
       toast.success("Compte LinkedIn connecté ✓");
       searchParams.delete("linkedin");
-      setSearchParams(searchParams, { replace: true });
+      changed = true;
     }
+    if (searchParams.get("meta") === "connected") {
+      toast.success("Compte Facebook / Instagram connecté ✓");
+      searchParams.delete("meta");
+      changed = true;
+    }
+    if (searchParams.get("gbp") === "connected") {
+      toast.success("Google Business Profile connecté ✓");
+      searchParams.delete("gbp");
+      changed = true;
+    }
+    if (changed) setSearchParams(searchParams, { replace: true });
   }, [searchParams, setSearchParams]);
 
   const remove = async (id) => {
