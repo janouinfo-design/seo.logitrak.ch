@@ -356,6 +356,33 @@ def analyze_eeat_signals(pages: List[dict], base_url: str) -> dict:
 # ---------------------------------------------------------------------------
 # LLM calls
 # ---------------------------------------------------------------------------
+def _repair_json(s: str) -> str:
+    """Répare un JSON tronqué : ferme les chaînes/brackets ouverts, retire les fragments incomplets."""
+    stack = []
+    in_str = esc = False
+    for ch in s:
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        else:
+            if ch == '"':
+                in_str = True
+            elif ch in "{[":
+                stack.append(ch)
+            elif ch in "}]" and stack:
+                stack.pop()
+    if in_str:
+        s += '"'
+    s = re.sub(r"[,\s]+$", "", s)
+    s = re.sub(r',?\s*"[^"]*"\s*:\s*$', "", s)
+    s += "".join("}" if c == "{" else "]" for c in reversed(stack))
+    return s
+
+
 def _parse_llm_json(text: str) -> dict:
     cleaned = text.strip()
     if cleaned.startswith("```"):
@@ -364,10 +391,15 @@ def _parse_llm_json(text: str) -> dict:
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if m:
-            return json.loads(m.group(0))
-        raise
+        pass
+    m = re.search(r"\{.*", cleaned, re.DOTALL)
+    if not m:
+        raise ValueError("Aucun JSON dans la réponse IA")
+    candidate = m.group(0)
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        return json.loads(_repair_json(candidate))
 
 
 async def llm_qualitative_analysis(site: dict, pages: List[dict], det: dict, llm_key: str) -> dict:
@@ -407,7 +439,11 @@ Réponds en JSON STRICT (aucun texte hors JSON) :
   "summary": "diagnostic global en 2-3 phrases : pourquoi ce site est ou n'est pas visible dans les IA et le potentiel de gain"
 }}
 Donne 4 à 6 priority_actions triées par impact décroissant."""
-    chat = LlmChat(api_key=llm_key, session_id=f"aivis-{site.get('id')}", system_message="Tu es un expert GEO/SEO. Tu réponds uniquement en JSON strict valide.").with_model("anthropic", "claude-sonnet-4-5-20250929")
+    chat = LlmChat(
+        api_key=llm_key,
+        session_id=f"aivis-{site.get('id')}",
+        system_message="Tu es un expert GEO/SEO. Tu réponds uniquement en JSON strict valide.",
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929").with_params(max_tokens=8000)
     resp = await chat.send_message(UserMessage(text=prompt))
     return _parse_llm_json(resp if isinstance(resp, str) else str(resp))
 

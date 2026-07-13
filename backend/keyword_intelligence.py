@@ -19,15 +19,22 @@ logger = logging.getLogger("kw-intelligence")
 MODEL = ("anthropic", "claude-sonnet-4-5-20250929")
 
 
-async def _llm(prompt: str, session_id: str, llm_key: str) -> dict:
+async def _llm(prompt: str, session_id: str, llm_key: str, max_tokens: int = 16000, retries: int = 2) -> dict:
     from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
-    chat = LlmChat(
-        api_key=llm_key,
-        session_id=session_id,
-        system_message="Tu es un expert en stratégie SEO/marketing. Tu réponds uniquement en JSON strict valide, sans texte hors JSON.",
-    ).with_model(*MODEL)
-    resp = await chat.send_message(UserMessage(text=prompt))
-    return _parse_llm_json(resp if isinstance(resp, str) else str(resp))
+    last_err = None
+    for attempt in range(retries):
+        chat = LlmChat(
+            api_key=llm_key,
+            session_id=f"{session_id}-{attempt}",
+            system_message="Tu es un expert en stratégie SEO/marketing. Tu réponds uniquement en JSON strict valide, sans texte hors JSON.",
+        ).with_model(*MODEL).with_params(max_tokens=max_tokens)
+        resp = await chat.send_message(UserMessage(text=prompt))
+        try:
+            return _parse_llm_json(resp if isinstance(resp, str) else str(resp))
+        except (ValueError, json.JSONDecodeError) as exc:
+            last_err = exc
+            logger.warning("JSON invalide (tentative %s/%s) : %s", attempt + 1, retries, exc)
+    raise RuntimeError(f"Réponse IA invalide après {retries} tentatives : {last_err}")
 
 
 async def build_business_profile(site: dict, pages: List[dict], llm_key: str) -> dict:

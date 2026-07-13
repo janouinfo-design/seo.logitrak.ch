@@ -55,7 +55,17 @@ Donne 3-6 products_services, 2-4 target_segments, 3-6 concurrents RÉELS probabl
         api_key=llm_key,
         session_id=f"bizanalyzer-{site.get('id')}",
         system_message="Tu es un directeur marketing expert. Tu réponds uniquement en JSON strict valide.",
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-    resp = await chat.send_message(UserMessage(text=prompt))
-    profile = _parse_llm_json(resp if isinstance(resp, str) else str(resp))
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929").with_params(max_tokens=12000)
+    profile = None
+    last_err = None
+    for attempt in range(2):
+        resp = await chat.send_message(UserMessage(text=prompt))
+        try:
+            profile = _parse_llm_json(resp if isinstance(resp, str) else str(resp))
+            break
+        except (ValueError, json.JSONDecodeError) as exc:
+            last_err = exc
+            logger.warning("JSON invalide (tentative %s/2) : %s", attempt + 1, exc)
+    if profile is None:
+        raise RuntimeError(f"Réponse IA invalide après 2 tentatives : {last_err}")
     return {"profile": profile, "pages_analyzed": [p["url"] for p in pages]}

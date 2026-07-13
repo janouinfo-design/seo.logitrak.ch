@@ -1,0 +1,30 @@
+{
+  "summary": "Tested Keyword Intelligence bug fix end-to-end. Main bug is FIXED: /api/sites/{id}/keyword-intelligence job completes in ~150s with status 'completed', no 'Expecting delimiter' error. Result contains 6 clusters, quick_wins, content_plan, competitors, summary. /latest endpoint also returns full report. However, one edge case in _repair_json fails: the exact truncation case from the review request '{\"a\": [{\"b\": \"c\", \"d\"' repairs to '{\"a\": [{\"b\": \"c\", \"d\"}]}' which is still invalid JSON (key without colon/value).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "ai_visibility._repair_json", "issue": "Fails on truncation where a key is present without ':' — e.g. '{\"a\": [{\"b\": \"c\", \"d\"' produces '{\"a\": [{\"b\": \"c\", \"d\"}]}' which is still invalid. The regex on line 381 only removes 'key:' patterns with trailing colon; it does not remove a bare trailing '\"key\"' after a comma. In production this is mitigated by max_tokens=16000 + retry(2), and real e2e job completed successfully, but the robustness helper is not fully correct."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_keyword_intelligence.py",
+    "/app/test_reports/pytest/iteration_5.xml"
+  ],
+  "action_items": [
+    "Improve _repair_json in /app/backend/ai_visibility.py to also strip a trailing bare key without value (e.g., add regex to remove ',\\s*\"[^\"]*\"\\s*$' after removing 'key:' pattern), so that the exact test case from the bug report parses cleanly. Suggested addition: after line 381 add: s = re.sub(r',\\s*\"[^\"]*\"\\s*$', '', s)."
+  ],
+  "critical_code_review_comments": [
+    "_repair_json handles many truncation cases but misses 'key without colon' — should also drop dangling '\"key\"' fragments after commas.",
+    "keyword_intelligence._llm retries with the SAME prompt/session (session_id changes with attempt suffix which is fine); combined with max_tokens=16000 and the repair helper, real-world Claude responses parse successfully.",
+    "server.py is very large (>3900 lines) — consider splitting router modules."
+  ],
+  "updated_files": ["/app/backend/tests/test_keyword_intelligence.py"],
+  "success_rate": {"backend": "75%", "frontend": "N/A (backend only per request)"},
+  "test_credentials": "demo@logirent.fr / demo1234 (works, JWT token returned)",
+  "seed_data_creation": "None (used existing Logirent site b3bec42d-2117-4f73-93b9-a0adc3b47a38 with existing business profile)",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Full e2e keyword-intelligence job takes ~150s. The main user-reported bug ('Expecting delimiter') is resolved by max_tokens=16000 + retry — real Claude calls succeed. Only remaining issue is a small gap in _repair_json regex that fails on one specific truncation pattern.",
+  "rca of the issue": "Original bug: Claude JSON response truncated by max_tokens (previously default 4096) → invalid JSON at char 13897 → json.JSONDecodeError. Fix combines: (a) with_params(max_tokens=16000) — main mitigation, (b) _repair_json to close open brackets/strings, (c) retry(2) on parse failure. E2E test confirms the combination works. Residual: _repair_json doesn't handle bare '\"key\"' after comma without colon — low-priority since retries + higher token budget make it unlikely to trigger."
+}

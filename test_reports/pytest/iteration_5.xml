@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="4" time="142.948" timestamp="2026-07-13T10:43:03.113034+00:00" hostname="agent-env-c8c8bd02-734f-43a6-a277-4b4023f4b1df"><testcase classname="tests.test_keyword_intelligence" name="test_repair_json_truncated" time="0.084"><failure message="json.decoder.JSONDecodeError: Expecting ':' delimiter: line 1 column 22 (char 21)">text = '{"a": [{"b": "c", "d"'
+
+    def _parse_llm_json(text: str) -&gt; dict:
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+        m = re.search(r"\{.*", cleaned, re.DOTALL)
+        if not m:
+            raise ValueError("Aucun JSON dans la réponse IA")
+        candidate = m.group(0)
+        try:
+&gt;           return json.loads(candidate)
+                   ^^^^^^^^^^^^^^^^^^^^^
+
+ai_visibility.py:400: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.11/json/__init__.py:346: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/json/decoder.py:337: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;json.decoder.JSONDecoder object at 0xfa56d6bd1dd0&gt;
+s = '{"a": [{"b": "c", "d"', idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+&gt;           obj, end = self.scan_once(s, idx)
+                       ^^^^^^^^^^^^^^^^^^^^^^
+E           json.decoder.JSONDecodeError: Expecting ':' delimiter: line 1 column 22 (char 21)
+
+/usr/local/lib/python3.11/json/decoder.py:353: JSONDecodeError
+
+During handling of the above exception, another exception occurred:
+
+    def test_repair_json_truncated():
+        """Unit: _parse_llm_json on truncated JSON should return dict without exception"""
+        from ai_visibility import _parse_llm_json
+        truncated = '{"a": [{"b": "c", "d"'
+&gt;       result = _parse_llm_json(truncated)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_keyword_intelligence.py:33: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+ai_visibility.py:402: in _parse_llm_json
+    return json.loads(_repair_json(candidate))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/json/__init__.py:346: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/json/decoder.py:337: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;json.decoder.JSONDecoder object at 0xfa56d6bd1dd0&gt;
+s = '{"a": [{"b": "c", "d"}]}', idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+&gt;           obj, end = self.scan_once(s, idx)
+                       ^^^^^^^^^^^^^^^^^^^^^^
+E           json.decoder.JSONDecodeError: Expecting ':' delimiter: line 1 column 22 (char 21)
+
+/usr/local/lib/python3.11/json/decoder.py:353: JSONDecodeError</failure></testcase><testcase classname="tests.test_keyword_intelligence" name="test_repair_json_various" time="0.000" /><testcase classname="tests.test_keyword_intelligence" name="test_keyword_intelligence_end_to_end" time="142.661" /><testcase classname="tests.test_keyword_intelligence" name="test_keyword_intelligence_latest" time="0.106" /></testsuite></testsuites>
