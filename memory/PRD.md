@@ -102,6 +102,39 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   mode édition (activité, description, positionnement, zones, modèle). Testé e2e sur logirent.ch.
 - [x] **Menu Aide** (2026-06-12) : page `/aide` (`Aide.jsx`) — boucle Connecter→Analyser→Générer→
   Publier→Mesurer, parcours 5 étapes avec liens, 13 modules expliqués, 7 FAQ, lien Guide PDF.
+- [x] **Analyse concurrentielle automatique** (2026-06-13) : backend `/app/backend/competitor_analysis.py`.
+  Utilise les concurrents du profil business (corrigés par l'utilisateur : Myrentcar, Renthub,
+  FleetGuru, RentSyst, HQ Rental Software, RENTALL pour Logirent) + snapshot httpx des sites
+  concurrents (si domaine connu). LLM → paysage concurrentiel, avantages, par-concurrent
+  (mots-clés dominés, forces/faiblesses, comment le battre), 10 content_gaps (génération 1 clic
+  via generate-async), plan de bataille 7 actions. Routes : `POST /api/sites/{id}/competitor-analysis`
+  (job async), `GET .../latest`. Collection `competitor_analysis_reports`. Page `/competitors`
+  (`Competitors.jsx`), nav "Concurrents" (Swords). Testé e2e sur Logirent.
+- [x] **Suggestions de sujets Générateur** (2026-06-13) : `GET /api/sites/{id}/content-suggestions?content_type=X`
+  → sujets + villes ciblées auto (source 1 : rapport KI filtré par type + pages locales manquantes ;
+  source 2 : LLM via profil business si <4 résultats). Bouton "💡 Proposer des sujets" dans Generator.jsx,
+  clic = remplit sujet+ville+mots-clés. Testé e2e.
+- [x] **Pré-remplissage intelligent page Mots-clés** (2026-06-13) : `GET /api/sites/{id}/keyword-prefill`
+  → chips cliquables : thématiques (clusters KI + produits), zones (villes/régions/PAYS), concurrents.
+  Champ renommé "Ville / région / pays". Édition des vrais concurrents ajoutée au Business Analyzer
+  (textarea un par ligne, merge avec détails existants). Testé e2e.
+- [x] **Corrections production** (2026-06-13) : badge "Made with Emergent" + tracking retirés de
+  index.html (titre : "LOGI SEO Booster — Agent Marketing IA") ; bug JSON tronqué LLM corrigé
+  (max_tokens 8k-16k + _repair_json + retry×2, validé testing agent iteration_5) ;
+  identifiants démo affichés sur /login (à retirer/conditionner pour la prod — EN ATTENTE de décision).
+
+## Déploiement VPS (2026-06-13) — EN PRODUCTION ✅
+- App déployée sur **https://seo.logitrak.ch** (VPS Ubuntu 83.228.207.198, utilisateur ubuntu).
+- Dossier `/opt/logi-seo-booster`, projet Docker `logiseo` (logiseo_frontend:3105, logiseo_backend:8105,
+  logiseo_mongodb non exposé), réseau `logiseo_network`, volume `logiseo_mongo_data`,
+  vhost `/etc/nginx/sites-available/logiseo.conf`, SSL certbot. Repo GitHub :
+  janouinfo-design/seo.logitrak.ch. Isolation stricte des autres apps (logitrak, navixy, protrader, logibus).
+- Clé IA sur VPS : clé Anthropic personnelle dans EMERGENT_LLM_KEY (testée, fonctionne avec
+  emergentintegrations). Tests citation ChatGPT/Gemini indisponibles sur VPS (clé Anthropic seule).
+- Pièges connus : "Save to GitHub" exclut .env* (template = env.production.example) et yarn.lock
+  (Dockerfile frontend tolère l'absence) ; requirements.txt contient litellm en URL directe
+  (filtré par grep dans backend/Dockerfile).
+- Mise à jour VPS : Save to GitHub → `git pull && docker compose -p logiseo build && docker compose -p logiseo up -d`.
 - [ ] **Repositionnement UI "Agent Marketing IA"** : dashboard, storytelling, agents IA
   (SEO Agent, GEO Agent, Content Agent, Social Agent). Nom placeholder inchangé.
 - [ ] **Workflow Builder enrichi** : déclencheurs = perte de positions, baisse de trafic,

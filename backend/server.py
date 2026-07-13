@@ -4100,6 +4100,64 @@ async def get_keyword_prefill(site_id: str, user=Depends(get_current_user)):
 
 
 # ---------------------------------------------------------------------------
+# Analyse concurrentielle automatique
+# ---------------------------------------------------------------------------
+@api.post("/sites/{site_id}/competitor-analysis")
+async def start_competitor_analysis(site_id: str, user=Depends(get_current_user)):
+    """Lance une analyse concurrentielle asynchrone. Poll via /content/jobs/{job_id}."""
+    site = await _get_user_site(site_id, user)
+    prof_doc = await db.business_profiles.find_one({"site_id": site_id, "user_id": user["id"]})
+    profile = (prof_doc or {}).get("profile") or {}
+    if not profile.get("competitors"):
+        raise HTTPException(400, "Aucun concurrent défini. Lancez d'abord le Business Analyzer, ou ajoutez vos concurrents via « Corriger ».")
+    job_id = gen_id()
+    await db.generation_jobs.insert_one({
+        "id": job_id,
+        "user_id": user["id"],
+        "type": "competitor_analysis",
+        "status": "pending",
+        "result": None,
+        "error": None,
+        "created_at": now_iso(),
+        "completed_at": None,
+    })
+
+    async def _bg():
+        try:
+            from competitor_analysis import run_competitor_analysis
+            report = await run_competitor_analysis(site, profile, EMERGENT_LLM_KEY)
+            report.update({
+                "id": gen_id(),
+                "site_id": site_id,
+                "site_name": site.get("name"),
+                "created_at": now_iso(),
+            })
+            await db.competitor_analysis_reports.insert_one({**report, "user_id": user["id"]})
+            await db.generation_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "completed", "result": report, "completed_at": now_iso()}},
+            )
+        except Exception as exc:
+            logger.exception("Competitor analysis failed")
+            await db.generation_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"status": "failed", "error": str(exc), "completed_at": now_iso()}},
+            )
+
+    asyncio.create_task(_bg())
+    return {"job_id": job_id, "status": "pending"}
+
+
+@api.get("/sites/{site_id}/competitor-analysis/latest")
+async def get_latest_competitor_analysis(site_id: str, user=Depends(get_current_user)):
+    await _get_user_site(site_id, user)
+    rep = await db.competitor_analysis_reports.find_one(
+        {"site_id": site_id, "user_id": user["id"]}, {"_id": 0, "user_id": 0}, sort=[("created_at", -1)]
+    )
+    return rep or {}
+
+
+# ---------------------------------------------------------------------------
 # Scheduler: daily rank snapshot at 04:00 UTC for every site that has GSC config
 # ---------------------------------------------------------------------------
 from apscheduler.schedulers.asyncio import AsyncIOScheduler

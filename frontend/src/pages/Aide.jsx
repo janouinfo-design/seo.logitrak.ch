@@ -75,6 +75,7 @@ const MODULES = [
   { icon: Search, to: "/audit", label: "Audit SEO", text: "Audit technique complet + détection de contenus dupliqués entre vos pages." },
   { icon: Radar, to: "/ai-visibility", label: "AI Visibility", text: "10 scores d'optimisation IA (GEO) : citation réelle par ChatGPT/Claude/Gemini, EEAT, Schema.org, entités…" },
   { icon: Building2, to: "/business", label: "Business Analyzer", text: "Profil business complet établi par l'IA : offres, cibles, concurrents, SWOT, priorités marketing — corrigeable par vous." },
+  { icon: HelpCircle, to: "/competitors", label: "Concurrents", text: "Plan de bataille : mots-clés dominés par vos concurrents, contenus qui vous manquent (génération 1 clic), tactiques pour les dépasser." },
   { icon: KeyRound, to: "/keywords", label: "Mots-clés", text: "Recherche simple de mots-clés par thème + liste de mots-clés suivis." },
   { icon: BrainCircuit, to: "/keyword-intelligence", label: "Keyword Intelligence", text: "Stratégie complète : clusters scorés, victoires rapides, plan de contenu, pages locales, concurrents." },
   { icon: Wand2, to: "/optimizer", label: "Optimiseur de pages", text: "Réécriture IA de vos pages existantes avec comparaison avant/après." },
