@@ -23,6 +23,7 @@ import {
   HelpCircle,
   Building2,
   Swords,
+  Zap,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -59,6 +60,7 @@ const navGroups = [
       { to: "/generator", icon: Sparkles, label: "Générateur IA", testid: "nav-generator" },
       { to: "/optimizer", icon: Wand2, label: "Optimiseur de pages", testid: "nav-optimizer" },
       { to: "/automation", icon: Rocket, label: "Automatisation", testid: "nav-automation" },
+      { to: "/workflows", icon: Zap, label: "Workflows", testid: "nav-workflows" },
       { to: "/drafts", icon: FileText, label: "Brouillons", testid: "nav-drafts" },
       { to: "/history", icon: History, label: "Historique", testid: "nav-history" },
     ],

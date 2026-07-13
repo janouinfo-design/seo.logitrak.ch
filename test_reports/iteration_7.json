@@ -1,0 +1,38 @@
+{
+  "summary": "Tested new '4 Agents' dashboard + Workflow Builder + notifications. 13/13 backend tests pass (agents/overview with & without site_id, CRUD workflows with validation, run for 3 trigger types, run_audit action, notify action, notifications list/mark-read). Frontend UI validated: login, 4 agent cards, social chips, nav-workflows, workflow builder create/run/toggle/delete, dashboard notifications banner + dismiss, regression on /drafts /audit /ai-visibility. generate_draft action works end-to-end on backend (verified draft + notification persisted in DB) BUT the HTTP call to POST /api/workflows/{id}/run returns 502 after ~60s because content generation takes 60-120s and Kubernetes ingress cuts at 60s. The scheduler (hourly job) is unaffected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/workflows/{id}/run", "issue": "When workflow contains generate_draft action, HTTP request times out at 60s (Kubernetes ingress) even though backend completes successfully (~77s). Result stored in workflow.last_result & notification/draft correctly created. UI 'Tester' button will show error toast while the action actually succeeds. Suggest: run generate_draft as background task (asyncio.create_task / BackgroundTasks) and return an immediate 202 with a 'in progress' status, or stream/poll."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Tester workflow with generate_draft action", "issue": "UI will display failure due to backend 502 (ingress timeout) even though generation succeeds ~77s later. User must refresh to see actual result stored in last_result.", "affected_selectors": ["workflow-run-*"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_workflows_agents.py",
+    "/app/test_reports/pytest/wf_agents.xml"
+  ],
+  "action_items": [
+    "Consider running generate_draft as a background task (FastAPI BackgroundTasks or asyncio.create_task) so /workflows/{id}/run returns quickly, then poll workflow.last_result or notifications for completion.",
+    "Optionally add a UI hint that generate_draft can take 1-2 min."
+  ],
+  "critical_code_review_comments": [
+    "server.py has grown to 4870 lines — consider splitting into routers (workflows.py, agents.py, notifications.py, drafts.py, seo.py) for maintainability.",
+    "_run_workflow synchronously awaits _do_generate_content which can take 60-120s; blocks the HTTP handler and is subject to ingress timeout. Use BackgroundTasks.",
+    "In agents/overview, _net() runs 4 sequential MongoDB round-trips (2 each) per network — could be batched with asyncio.gather for lower latency.",
+    "PATCH /workflows filters values with 'if v is not None' — this prevents disabling a workflow via {enabled: false} being set. Verified: it does work because pydantic dumps 'enabled': False and False is not None; OK. But 'if v is not None' would drop legitimate empty-list/empty-string values in future fields. Prefer exclude_unset only."
+  ],
+  "updated_files": ["/app/backend/tests/test_workflows_agents.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "demo@logirent.fr / demo1234",
+  "seed_data_creation": "Test workflows TEST_* created & cleaned up. One draft was generated via generate_draft (quota Free 5/mo: now 2/5 used).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend token key is 'token' (not 'access_token'). Site fixture uses GET /api/sites → sites[0].id. Ingress request timeout ~60s: any endpoint that calls Claude for content generation (~60-120s) must be async/background. 2 seed workflows exist on Logirent site (Régularité publication, Test surveillance positions).",
+  "rca of the issue": "generate_draft 502: The Kubernetes ingress in front of FastAPI enforces a ~60s upstream timeout. _do_generate_content invokes Claude Sonnet 4.5 for full article generation which typically takes 60-120s, exceeding this window. Backend logs & DB confirm the operation completes successfully — draft persisted, notification created, workflow.last_result populated. Mitigation: convert generate_draft action to a fire-and-forget background task using FastAPI BackgroundTasks or asyncio.create_task and return 200 immediately with {'fired': true, 'actions_results': [{'action':'generate_draft','ok':true,'detail':'Génération en cours en arrière-plan...'}]}. The user will see the completed draft & notification within 1-2 minutes."
+}
