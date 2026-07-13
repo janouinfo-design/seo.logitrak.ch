@@ -38,7 +38,7 @@ const TRIGGERS = {
 
 const ACTIONS = {
   notify: { label: "Me notifier", icon: Bell, desc: "Notification in-app sur le Dashboard" },
-  generate_draft: { label: "Générer un brouillon IA", icon: PenLine, desc: "Claude rédige un article ciblé (compte dans le quota)" },
+  generate_draft: { label: "Générer un brouillon IA", icon: PenLine, desc: "Claude rédige un article ciblé en 1-2 min (compte dans le quota)" },
   run_audit: { label: "Relancer un audit SEO", icon: Search, desc: "Nouveau diagnostic technique du site" },
 };
 

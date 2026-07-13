@@ -135,11 +135,19 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   (Dockerfile frontend tolère l'absence) ; requirements.txt contient litellm en URL directe
   (filtré par grep dans backend/Dockerfile).
 - Mise à jour VPS : Save to GitHub → `git pull && docker compose -p logiseo build && docker compose -p logiseo up -d`.
-- [ ] **Repositionnement UI "Agent Marketing IA"** : dashboard, storytelling, agents IA
-  (SEO Agent, GEO Agent, Content Agent, Social Agent). Nom placeholder inchangé.
-- [ ] **Workflow Builder enrichi** : déclencheurs = perte de positions, baisse de trafic,
-  nouvelle page, concurrent progresse, backlink perdu, 404, Core Web Vitals dégradés,
-  nouvelle tendance, FAQ concurrent → actions (analyser, réécrire, publier, alerter).
+- [x] **Repositionnement UI "Agent Marketing IA"** (2026-06-13, testé 13/13) : Dashboard réécrit en
+  « Vos 4 agents marketing IA » (Agent SEO / GEO / Contenu / Social) — endpoint `GET /api/agents/overview`
+  (agrège audits, ai_visibility, drafts, quota, réseaux sociaux + chutes de position GSC).
+  Frontend `Dashboard.jsx` réécrit (4 cartes agents + badges statut + bandeau notifications).
+- [x] **Workflow Builder v1** (2026-06-13, testé 13/13) : règles SI→ALORS. Déclencheurs :
+  rank_drop (seuil positions), ai_visibility_drop (seuil points), no_publication (jours).
+  Actions : notify (notifications in-app), generate_draft (Claude, en arrière-plan sur run manuel
+  pour éviter le timeout ingress 60s), run_audit. Cron horaire `_workflow_processor_job`
+  (max 1 déclenchement/jour/workflow). Endpoints `/api/workflows` CRUD + `/run`,
+  `/api/notifications` + `/read`. Frontend : `Workflows.jsx` (route /workflows, menu Actions),
+  bandeau notifications sur Dashboard. Collections : `workflows`, `notifications`.
+- [ ] **Workflow Builder v2** : déclencheurs additionnels (concurrent progresse, backlink perdu,
+  404, Core Web Vitals, nouvelle tendance, FAQ concurrent) → actions (réécrire, publier, alerter email).
 - [x] **Réseaux sociaux Meta + Google Business** (2026-06-13, testé 15/15) : OAuth + publication
   Facebook Pages, Instagram et Google Business Profile. Backend : `social_publishing.py` +
   routes dans server.py (`/api/meta/*`, `/api/gbp/*`, `POST /api/drafts/{id}/publish-facebook|instagram|gbp`).

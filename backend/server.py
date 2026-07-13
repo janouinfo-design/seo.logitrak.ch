@@ -3611,7 +3611,7 @@ async def _evaluate_workflow_trigger(wf: dict) -> tuple:
     return True, f"Aucune publication depuis plus de {days} jours.", {"days": days}
 
 
-async def _execute_workflow_actions(wf: dict, reason: str, context: dict) -> list:
+async def _execute_workflow_actions(wf: dict, reason: str, context: dict, background: bool = False) -> list:
     uid, sid = wf["user_id"], wf["site_id"]
     results = []
     for action in wf.get("actions", []):
@@ -3632,10 +3632,16 @@ async def _execute_workflow_actions(wf: dict, reason: str, context: dict) -> lis
                     topic = "Nouvel article frais pour maintenir la régularité de publication et le référencement"
                     keywords = []
                 req = ContentGenerateRequest(site_id=sid, content_type="article", topic=topic, keywords=keywords)
-                draft = await _do_generate_content(req, uid)
-                await _notify(uid, sid, "Brouillon généré automatiquement",
-                              f"Le workflow « {wf['name']} » a rédigé : {draft.title}. Relisez-le dans Brouillons.", wf)
-                results.append({"action": "generate_draft", "ok": True, "detail": f"Brouillon créé : {draft.title}", "draft_id": draft.id})
+                if background:
+                    # HTTP path: generation takes 60-120s (> ingress timeout) → fire-and-forget
+                    asyncio.create_task(_bg_workflow_generate_draft(wf, req))
+                    results.append({"action": "generate_draft", "ok": True,
+                                    "detail": "Génération du brouillon lancée en arrière-plan (1-2 min) — surveillez vos notifications et la page Brouillons."})
+                else:
+                    draft = await _do_generate_content(req, uid)
+                    await _notify(uid, sid, "Brouillon généré automatiquement",
+                                  f"Le workflow « {wf['name']} » a rédigé : {draft.title}. Relisez-le dans Brouillons.", wf)
+                    results.append({"action": "generate_draft", "ok": True, "detail": f"Brouillon créé : {draft.title}", "draft_id": draft.id})
             elif action == "run_audit":
                 report = await run_audit(sid, user={"id": uid})
                 await _notify(uid, sid, "Audit SEO relancé automatiquement",
@@ -3649,11 +3655,31 @@ async def _execute_workflow_actions(wf: dict, reason: str, context: dict) -> lis
     return results
 
 
+async def _bg_workflow_generate_draft(wf: dict, req: "ContentGenerateRequest"):
+    """Background generation for manual workflow runs (avoids ingress timeout)."""
+    uid, sid = wf["user_id"], wf["site_id"]
+    try:
+        draft = await _do_generate_content(req, uid)
+        detail = {"action": "generate_draft", "ok": True, "detail": f"Brouillon créé : {draft.title}", "draft_id": draft.id}
+        await _notify(uid, sid, "Brouillon généré automatiquement",
+                      f"Le workflow « {wf['name']} » a rédigé : {draft.title}. Relisez-le dans Brouillons.", wf)
+    except HTTPException as exc:
+        detail = {"action": "generate_draft", "ok": False, "detail": str(exc.detail)}
+        await _notify(uid, sid, "Échec de génération du brouillon",
+                      f"Le workflow « {wf['name']} » n'a pas pu générer le brouillon : {exc.detail}", wf)
+    except Exception as exc:
+        logger.exception("Background workflow draft generation failed (wf %s)", wf["id"])
+        detail = {"action": "generate_draft", "ok": False, "detail": str(exc)[:200]}
+        await _notify(uid, sid, "Échec de génération du brouillon",
+                      f"Le workflow « {wf['name']} » n'a pas pu générer le brouillon.", wf)
+    await db.workflows.update_one({"id": wf["id"]}, {"$push": {"last_result.actions_results": detail}})
+
+
 async def _run_workflow(wf: dict, force: bool = False) -> dict:
     fired, reason, context = await _evaluate_workflow_trigger(wf)
     result = {"fired": fired, "reason": reason, "actions_results": []}
     if fired:
-        result["actions_results"] = await _execute_workflow_actions(wf, reason, context)
+        result["actions_results"] = await _execute_workflow_actions(wf, reason, context, background=force)
     update = {
         "last_run_at": now_iso(),
         "last_result": result,
