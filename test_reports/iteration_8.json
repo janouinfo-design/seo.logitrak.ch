@@ -1,0 +1,41 @@
+{
+  "summary": "Full backend + frontend regression sweep after 16-module refactor. Backend: 29/30 pytest passed (test_regression_refactor.py) covering auth, sites, drafts, agents/overview, workflows CRUD+run (notify), notifications, workspace/billing, meta/gbp/linkedin/google status + login URLs, performance, rank-tracking, dashboard stats, audits history, calendar, business-profile, ai-visibility latest, competitor latest, saved keywords, draft export.html (og:image present) and generate-image (503 as expected). Frontend: login, 4 agent cards visible, all 16 menu pages load with 0 console errors, draft detail page shows draft-cover-panel + draft-generate-image-button + social-publish-panel (3 Connect buttons) + LinkedIn button, title save works ('Modifications enregistrées'), workflows page renders + 'Tester' on existing 'Régularité publication' fires notify successfully ('Déclencheur activé — actions exécutées' toast). ONE REGRESSION BUG FOUND: draft export.html omits the <figure class='cover'> element even when cover_image_url is set — cover_html variable is built but never interpolated into the HTML template body.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/drafts/{id}/export.html",
+        "issue": "The exported HTML no longer includes the <figure class='cover'> block for the cover image. In routes_publish.py::_render_html, cover_html is computed (lines 119-129) but is not inserted into the returned template between line 163 (<h1>{title}</h1>) and line 166 ({body_html}). Add {cover_html} after the .meta div and before {body_html}. og:image meta is correctly rendered — only the visible <figure> is missing. Regression introduced by refactor.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_regression_refactor.py",
+    "/app/test_reports/pytest/regression_refactor.xml"
+  ],
+  "action_items": [
+    "Fix routes_publish.py::_render_html — insert {cover_html} into the article body of the HTML template so the cover figure is present in export.html (regression from monolith split).",
+    "Optional: The playwright script had trouble programmatically toggling workflow-action-notify tile — the tile is a clickable div with data-testid but the click event may need to hit an inner input. Existing E2E via iteration 7 already validated create/run/delete, and my UI test confirmed the 'Tester' button + toast + notification path. No user-facing bug."
+  ],
+  "critical_code_review_comments": [
+    "routes_publish.py _render_html: dead computation of cover_html (variable built but never used in the returned f-string). Same for cover_image_alt/credit — currently unused visually.",
+    "server.py has been cleanly split — pyflakes clean, imports OK. 16 modules registered on the shared api router. Nice separation.",
+    "routes_workflows.py notifications endpoint returns {notifications:[...], unread_count:N} — previous tests expected a bare list. Confirm frontend consumers use the object shape."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_regression_refactor.py"
+  ],
+  "success_rate": {"backend": "96.6% (29/30)", "frontend": "100%"},
+  "test_credentials": "demo@logirent.fr / demo1234",
+  "seed_data_creation": "One transient workflow TEST_regression_wf created via backend test and deleted. No draft generated (quota preserved).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The refactored backend exposes: /workspace (not /workspace/current), /keywords/saved?site_id= (not /sites/{id}/keywords/saved), /notifications returns {notifications:[...],unread_count:N}, POST /notifications/read with {ids:[...]}. Workflow payload: {site_id, name, trigger_type, trigger_params:{days:N}, actions:['notify'|'generate_draft'|'run_audit'], enabled}. Draft cover regression bug is in routes_publish.py:162-170 — the template body is missing {cover_html}.",
+  "rca of the issue": "During the split of the monolithic server.py into routes_publish.py, the _render_html function retained the code that computes cover_html and og_image conditionally on draft.cover_image_url, but the return f-string body only interpolates {title}, {body_html}, {faq_html}. The {cover_html} placeholder is missing (probably lost during the copy). og_image is still injected in <head> because it's concatenated directly after `{og:url}` value, but the visible <figure class='cover'> is dropped. Reproduction: GET /api/drafts/f10807ff-f05f-44bd-9552-d53711817f98/export.html with valid token → response body does not contain the string '<figure' although draft.cover_image_url is set. Mitigation: add `{cover_html}` between the .meta div and {body_html} in routes_publish.py::_render_html."
+}
