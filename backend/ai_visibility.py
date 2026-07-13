@@ -379,6 +379,7 @@ def _repair_json(s: str) -> str:
         s += '"'
     s = re.sub(r"[,\s]+$", "", s)
     s = re.sub(r',?\s*"[^"]*"\s*:\s*$', "", s)
+    s = re.sub(r',\s*"[^"]*"\s*$', "", s)
     s += "".join("}" if c == "{" else "]" for c in reversed(stack))
     return s
 
