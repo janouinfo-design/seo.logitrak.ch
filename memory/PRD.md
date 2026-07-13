@@ -164,6 +164,14 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   le HTML publié (figure + crédit photographe + og:image) et utilisée par défaut pour les posts
   Facebook/Instagram. Champs draft : cover_image_url/alt/credit/credit_url, image_query.
   Env : PEXELS_API_KEY (clé gratuite pexels.com/api) — VIDE en preview, à configurer sur le VPS.
+- [x] **Refactoring backend en modules** (2026-06-13, régression 29/30 backend + 100% frontend,
+  seul bug trouvé — figure cover manquante dans export.html — corrigé) : server.py (~5000 lignes)
+  découpé en 16 fichiers : `app_core.py` (env, db, Fernet, modèles Pydantic, auth JWT) +
+  `routes_sites/audit/billing/content/publish/google/linkedin/pipeline/social/dashboard/
+  workflows/keywords/optimizer/analysis.py` + `server.py` (entrypoint + scheduler + CORS).
+  Tous les modules s'enregistrent sur le router partagé `api` d'app_core, imports en ordre DAG
+  (billing avant content pour le quota ; linkedin avant pipeline). 105/105 routes préservées.
+  Sauvegarde du monolithe : /tmp/server_monolith.bak (hors repo).
 - [ ] Recherche de nom : générer 50-100 propositions avec critères (domaines, marques, prononciation).
 
 ## Backlog / Phase 2 (P0)

@@ -157,12 +157,17 @@ def _render_html(draft: dict, site: dict) -> str:
     .faq-item summary{{cursor:pointer;font-weight:600;color:#020617}}
     .faq-item p{{margin-top:.5rem;color:#334155}}
     .meta{{color:#64748b;font-size:.85rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid #e2e8f0}}
+    .cover{{margin:0 0 1.5rem}}
+    .cover img{{width:100%;height:auto;border-radius:10px;display:block}}
+    .cover figcaption{{font-size:.7rem;color:#94a3b8;margin-top:.35rem;text-align:right}}
+    .cover figcaption a{{color:#94a3b8;text-decoration:none}}
   </style>
 </head>
 <body>
   <article>
     <h1>{title}</h1>
     <div class="meta">Publié le {datetime.now(timezone.utc).strftime("%d/%m/%Y")} · {site.get("name","")}</div>
+    {cover_html}
     {body_html}
     {faq_html}
   </article>
