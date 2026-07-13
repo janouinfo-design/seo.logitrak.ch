@@ -33,23 +33,43 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 
-const nav = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true, testid: "nav-dashboard" },
-  { to: "/sites", icon: Globe, label: "Sites", testid: "nav-sites" },
-  { to: "/audit", icon: Search, label: "Audit SEO", testid: "nav-audit" },
-  { to: "/ai-visibility", icon: Radar, label: "AI Visibility", testid: "nav-ai-visibility" },
-  { to: "/business", icon: Building2, label: "Business Analyzer", testid: "nav-business" },
-  { to: "/competitors", icon: Swords, label: "Concurrents", testid: "nav-competitors" },
-  { to: "/keywords", icon: KeyRound, label: "Mots-clés", testid: "nav-keywords" },
-  { to: "/keyword-intelligence", icon: BrainCircuit, label: "Keyword Intelligence", testid: "nav-keyword-intelligence" },
-  { to: "/optimizer", icon: Wand2, label: "Optimiseur de pages", testid: "nav-optimizer" },
-  { to: "/generator", icon: Sparkles, label: "Générateur IA", testid: "nav-generator" },
-  { to: "/automation", icon: Rocket, label: "Automatisation", testid: "nav-automation" },
-  { to: "/drafts", icon: FileText, label: "Brouillons", testid: "nav-drafts" },
-  { to: "/history", icon: History, label: "Historique", testid: "nav-history" },
-  { to: "/performance", icon: LineChart, label: "Performance", testid: "nav-performance" },
-  { to: "/billing", icon: CreditCard, label: "Facturation", testid: "nav-billing" },
-  { to: "/aide", icon: HelpCircle, label: "Aide", testid: "nav-aide" },
+const navGroups = [
+  {
+    title: null,
+    items: [
+      { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true, testid: "nav-dashboard" },
+      { to: "/sites", icon: Globe, label: "Sites", testid: "nav-sites" },
+    ],
+  },
+  {
+    title: "Analyses",
+    items: [
+      { to: "/audit", icon: Search, label: "Audit SEO", testid: "nav-audit" },
+      { to: "/ai-visibility", icon: Radar, label: "AI Visibility", testid: "nav-ai-visibility" },
+      { to: "/business", icon: Building2, label: "Business Analyzer", testid: "nav-business" },
+      { to: "/competitors", icon: Swords, label: "Concurrents", testid: "nav-competitors" },
+      { to: "/keywords", icon: KeyRound, label: "Mots-clés", testid: "nav-keywords" },
+      { to: "/keyword-intelligence", icon: BrainCircuit, label: "Keyword Intelligence", testid: "nav-keyword-intelligence" },
+      { to: "/performance", icon: LineChart, label: "Performance", testid: "nav-performance" },
+    ],
+  },
+  {
+    title: "Actions",
+    items: [
+      { to: "/generator", icon: Sparkles, label: "Générateur IA", testid: "nav-generator" },
+      { to: "/optimizer", icon: Wand2, label: "Optimiseur de pages", testid: "nav-optimizer" },
+      { to: "/automation", icon: Rocket, label: "Automatisation", testid: "nav-automation" },
+      { to: "/drafts", icon: FileText, label: "Brouillons", testid: "nav-drafts" },
+      { to: "/history", icon: History, label: "Historique", testid: "nav-history" },
+    ],
+  },
+  {
+    title: "Compte",
+    items: [
+      { to: "/billing", icon: CreditCard, label: "Facturation", testid: "nav-billing" },
+      { to: "/aide", icon: HelpCircle, label: "Aide", testid: "nav-aide" },
+    ],
+  },
 ];
 
 function SiteSwitcher() {
@@ -137,28 +157,39 @@ export default function Layout() {
           <SiteSwitcher />
         </div>
 
-        <nav className="flex-1 p-3 space-y-0.5">
-          {nav.map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                data-testid={item.testid}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-slate-100 text-slate-950"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                  }`
-                }
-              >
-                <Icon className="w-[18px] h-[18px]" strokeWidth={1.8} />
-                {item.label}
-              </NavLink>
-            );
-          })}
+        <nav className="flex-1 p-3 overflow-y-auto">
+          {navGroups.map((group, gi) => (
+            <div key={gi} className={gi > 0 ? "mt-3" : ""}>
+              {group.title && (
+                <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  {group.title}
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.end}
+                      data-testid={item.testid}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                          isActive
+                            ? "bg-slate-100 text-slate-950"
+                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                        }`
+                      }
+                    >
+                      <Icon className="w-[18px] h-[18px]" strokeWidth={1.8} />
+                      {item.label}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         <div className="p-3 border-t border-slate-200">
