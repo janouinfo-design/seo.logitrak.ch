@@ -1,0 +1,41 @@
+{
+  "summary": "Full E2E validation of the new forgot/reset password flow + Login improvements (demo block removed, forgot link, eye toggle, password-manager autocomplete). Backend pytest 7/7 pass. Frontend Playwright E2E fully green including token extraction from backend logs, reset, login with new password, then restore of demo1234.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_password_reset.py",
+    "/app/test_reports/pytest/password_reset.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FRONTEND_URL env var used to build reset_link is empty in preview → link in logs starts with '/reset-password?token=...'. Fine because test harness only needs the token, but for real Resend emails you must set FRONTEND_URL to the public preview/prod URL, otherwise the email link would be relative and unusable.",
+    "forgot-password endpoint has no rate limiting → an attacker could still enumerate by timing or spam tokens creation. Consider a simple in-memory/mongo rate-limit per IP+email.",
+    "password_reset_tokens collection has no TTL index on expires_at; used/expired tokens accumulate forever. Recommend `db.password_reset_tokens.create_index('expires_at', expireAfterSeconds=0)` with a real ISODate field."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_password_reset.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "demo@logirent.fr / demo1234 (restored at end of tests)",
+  "seed_data_creation": "None. Test users created via /api/auth/register use random test-XXX@test.fr emails.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Password reset flow works end-to-end. RESEND_API_KEY empty in preview → reset link is logged as 'PASSWORD RESET LINK ... /var/log/supervisor/backend.err.log'. Tests extract token via `tail /var/log/supervisor/backend.err.log`. Demo credentials demo@logirent.fr/demo1234 are restored after each E2E run.",
+  "validated_checklist": {
+    "login_demo_block_removed": true,
+    "login_forgot_link_present_and_navigates": true,
+    "login_eye_toggle_password_visibility": true,
+    "login_autocomplete_attrs": "email→'username email', password→'current-password' (name attrs correct)",
+    "forgot_form_and_success_screen": true,
+    "backend_forgot_same_response_known_and_unknown": true,
+    "backend_reset_link_logged_only_for_existing_user": true,
+    "backend_bogus_token_400": true,
+    "backend_short_password_422": true,
+    "backend_reused_token_400": true,
+    "reset_missing_token_message": true,
+    "reset_eye_toggle": true,
+    "e2e_reset_then_login_new_pwd": true,
+    "demo1234_restored": true,
+    "register_still_works": true
+  }
+}

@@ -381,3 +381,88 @@ async def me(user=Depends(get_current_user)):
     return user_to_public(user)
 
 
+# ---------------------------------------------------------------------------
+# Password reset (forgot password)
+# ---------------------------------------------------------------------------
+import secrets
+import hashlib
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM = os.environ.get("RESEND_FROM", "LOGI SEO Booster <onboarding@resend.dev>")
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8)
+
+
+async def _send_reset_email(to_email: str, reset_link: str) -> bool:
+    if not RESEND_API_KEY:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "from": RESEND_FROM,
+                    "to": [to_email],
+                    "subject": "Réinitialisation de votre mot de passe — LOGI SEO Booster",
+                    "html": (
+                        f"<p>Bonjour,</p><p>Vous avez demandé la réinitialisation de votre mot de passe.</p>"
+                        f"<p><a href=\"{reset_link}\">Cliquez ici pour choisir un nouveau mot de passe</a> "
+                        f"(lien valable 1 heure).</p>"
+                        f"<p>Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>"
+                    ),
+                },
+            )
+        if r.status_code in (200, 201):
+            return True
+        logger.warning("Resend email failed (%s): %s", r.status_code, r.text[:200])
+    except Exception as exc:
+        logger.warning("Resend email error: %s", exc)
+    return False
+
+
+@api.post("/auth/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest):
+    generic = {"ok": True, "message": "Si un compte existe avec cet email, un lien de réinitialisation a été envoyé."}
+    user = await db.users.find_one({"email": payload.email.lower()}, {"_id": 0, "id": 1, "email": 1})
+    if not user:
+        return generic
+    token = secrets.token_urlsafe(32)
+    await db.password_reset_tokens.insert_one({
+        "id": gen_id(),
+        "user_id": user["id"],
+        "token_hash": hashlib.sha256(token.encode()).hexdigest(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        "used": False,
+        "created_at": now_iso(),
+    })
+    base = FRONTEND_URL.rstrip("/") if FRONTEND_URL else ""
+    reset_link = f"{base}/reset-password?token={token}"
+    sent = await _send_reset_email(user["email"], reset_link)
+    if not sent:
+        logger.warning("PASSWORD RESET LINK (email non configuré — RESEND_API_KEY absent) pour %s : %s",
+                       user["email"], reset_link)
+    return generic
+
+
+@api.post("/auth/reset-password")
+async def reset_password(payload: ResetPasswordRequest):
+    token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
+    doc = await db.password_reset_tokens.find_one({"token_hash": token_hash, "used": False}, {"_id": 0})
+    if not doc:
+        raise HTTPException(400, "Lien invalide ou déjà utilisé. Refaites une demande de réinitialisation.")
+    if doc["expires_at"] < datetime.now(timezone.utc).isoformat():
+        raise HTTPException(400, "Lien expiré (valable 1 heure). Refaites une demande de réinitialisation.")
+    await db.users.update_one({"id": doc["user_id"]}, {"$set": {"password_hash": hash_password(payload.new_password)}})
+    await db.password_reset_tokens.update_one({"token_hash": token_hash}, {"$set": {"used": True}})
+    return {"ok": True, "message": "Mot de passe mis à jour. Vous pouvez vous connecter."}
+
+

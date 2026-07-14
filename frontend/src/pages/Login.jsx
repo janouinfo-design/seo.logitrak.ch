@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Login() {
@@ -9,6 +9,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async (e) => {
@@ -48,12 +49,15 @@ export default function Login() {
             Accédez à vos audits SEO et à la génération IA pour Logirent et Logitime.
           </p>
 
-          <form onSubmit={onSubmit} className="space-y-4" data-testid="login-form">
+          <form onSubmit={onSubmit} method="post" className="space-y-4" data-testid="login-form">
             <div>
-              <label className="text-xs font-medium text-slate-700 mb-1.5 block">Email professionnel</label>
+              <label htmlFor="email" className="text-xs font-medium text-slate-700 mb-1.5 block">Email professionnel</label>
               <input
                 data-testid="login-email-input"
+                id="email"
+                name="email"
                 type="email"
+                autoComplete="username email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -62,16 +66,40 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-700 mb-1.5 block">Mot de passe</label>
-              <input
-                data-testid="login-password-input"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full border border-slate-300 rounded-md px-3 py-2.5 bg-white text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7] transition-all"
-                placeholder="••••••••"
-              />
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="password" className="text-xs font-medium text-slate-700 block">Mot de passe</label>
+                <Link
+                  to="/forgot-password"
+                  data-testid="login-forgot-password-link"
+                  className="text-xs text-[#002FA7] hover:underline font-medium"
+                >
+                  Mot de passe oublié ?
+                </Link>
+              </div>
+              <div className="relative">
+                <input
+                  data-testid="login-password-input"
+                  id="password"
+                  name="password"
+                  type={showPw ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full border border-slate-300 rounded-md px-3 py-2.5 pr-10 bg-white text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7] transition-all"
+                  placeholder="••••••••"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowPw((v) => !v)}
+                  data-testid="login-toggle-password-visibility"
+                  aria-label={showPw ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <button
               type="submit"
@@ -82,22 +110,6 @@ export default function Login() {
               {loading ? "Connexion…" : "Se connecter"}
             </button>
           </form>
-
-          <div className="mt-6 border border-slate-200 bg-slate-50 rounded-md p-4" data-testid="login-demo-credentials">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Compte démo</div>
-            <div className="text-sm text-slate-700 font-mono">
-              <div>Email : <span className="font-semibold text-slate-900">demo@logirent.fr</span></div>
-              <div>Mot de passe : <span className="font-semibold text-slate-900">demo1234</span></div>
-            </div>
-            <button
-              type="button"
-              data-testid="login-demo-fill-button"
-              onClick={() => { setEmail("demo@logirent.fr"); setPassword("demo1234"); }}
-              className="mt-2 text-xs font-medium text-[#002FA7] hover:underline"
-            >
-              Remplir automatiquement →
-            </button>
-          </div>
 
           <p className="mt-6 text-sm text-slate-600">
             Pas encore de compte ?{" "}

@@ -65,6 +65,8 @@ export default function Register() {
               <input
                 data-testid="register-email-input"
                 type="email"
+                name="email"
+                autoComplete="username email"
                 required
                 value={form.email}
                 onChange={set("email")}
@@ -77,6 +79,8 @@ export default function Register() {
               <input
                 data-testid="register-password-input"
                 type="password"
+                name="new-password"
+                autoComplete="new-password"
                 required
                 minLength={6}
                 value={form.password}
