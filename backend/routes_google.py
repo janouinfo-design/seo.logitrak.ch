@@ -108,6 +108,19 @@ async def google_login(user=Depends(get_current_user)):
         prompt="consent",
         state=state_token,
     )
+    # PKCE: the lib generates a code_verifier sent as code_challenge in auth_url.
+    # Persist it (keyed by state) so the callback can complete the token exchange.
+    code_verifier = getattr(flow, "code_verifier", None)
+    if code_verifier:
+        import hashlib as _hashlib
+        await db.google_oauth_states.delete_many(
+            {"created_at": {"$lt": (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()}}
+        )
+        await db.google_oauth_states.insert_one({
+            "state_hash": _hashlib.sha256(state_token.encode()).hexdigest(),
+            "code_verifier": enc(code_verifier),
+            "created_at": now_iso(),
+        })
     return {"authorization_url": auth_url}
 
 
@@ -126,6 +139,13 @@ async def google_callback(code: str, state: str, scope: Optional[str] = None):
 
     flow = Flow.from_client_config(_google_oauth_client_config(), scopes=GOOGLE_SCOPES, state=state)
     flow.redirect_uri = GOOGLE_OAUTH_REDIRECT_URI
+    # PKCE: restore the code_verifier generated at /google/login
+    import hashlib as _hashlib
+    state_doc = await db.google_oauth_states.find_one_and_delete(
+        {"state_hash": _hashlib.sha256(state.encode()).hexdigest()}
+    )
+    if state_doc and state_doc.get("code_verifier"):
+        flow.code_verifier = dec(state_doc["code_verifier"])
     callback_url = f"{GOOGLE_OAUTH_REDIRECT_URI}?code={code}&state={state}"
     if scope:
         callback_url += f"&scope={scope}"

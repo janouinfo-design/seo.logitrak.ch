@@ -1,0 +1,28 @@
+{
+  "summary": "Validated Google OAuth PKCE fix in routes_google.py: /google/login now persists Fernet-encrypted code_verifier keyed by sha256(state) in google_oauth_states, and /google/oauth/callback restores it via find_one_and_delete (single-use). All 6 backend tests pass. Frontend smoke on /performance also OK.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Performance page", "issues": ["Recharts warning: chart container width/height reported as -1 on initial paint (cosmetic, non-blocking)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_google_oauth_pkce.py",
+    "/app/test_reports/pytest/google_oauth_pkce.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes_google.py:117 uses ISO-string comparison for created_at TTL purge; string comparison works only because all docs use the same now_iso() format. Consider a real Mongo TTL index (expireAfterSeconds=1800) on created_at for robustness.",
+    "State JWT can be identical across two rapid /google/login calls (same sub, same exp minute) → two docs with the same state_hash accumulate. Consider adding a jti/nonce claim or upserting on state_hash to avoid duplicate docs."
+  ],
+  "updated_files": ["/app/backend/tests/test_google_oauth_pkce.py"],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% (smoke)"},
+  "test_credentials": "demo@logirent.fr / demo1234",
+  "seed_data_creation": "None (test cleans up its own google_oauth_states docs).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "PKCE fix verified: authorization_url contains code_challenge=... & code_challenge_method=S256; MongoDB collection google_oauth_states stores {state_hash, code_verifier (Fernet 'enc::gAAAA...'), created_at}; callback with valid state + fake code returns HTTP 400 with 'Échec d'échange du code OAuth' but NO 'Missing code verifier'; state doc is deleted after callback (single-use). Google keys are FACTICES in preview so full OAuth handshake cannot be tested E2E.",
+  "rca of the issue": "google-auth-oauthlib.Flow generates a random code_verifier at /google/login and sends its S256 hash as code_challenge. The callback previously built a fresh Flow without setting flow.code_verifier, so google's token endpoint returned 'Missing code verifier'. Fix persists the verifier (encrypted via Fernet) keyed by sha256(state) in Mongo and restores it in the callback via find_one_and_delete before flow.fetch_token()."
+}
