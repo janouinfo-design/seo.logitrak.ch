@@ -116,11 +116,11 @@ async def google_login(user=Depends(get_current_user)):
         await db.google_oauth_states.delete_many(
             {"created_at": {"$lt": (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()}}
         )
-        await db.google_oauth_states.insert_one({
-            "state_hash": _hashlib.sha256(state_token.encode()).hexdigest(),
-            "code_verifier": enc(code_verifier),
-            "created_at": now_iso(),
-        })
+        await db.google_oauth_states.update_one(
+            {"state_hash": _hashlib.sha256(state_token.encode()).hexdigest()},
+            {"$set": {"code_verifier": enc(code_verifier), "created_at": now_iso()}},
+            upsert=True,
+        )
     return {"authorization_url": auth_url}
 
 

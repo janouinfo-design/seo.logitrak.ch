@@ -180,6 +180,11 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   (sinon lien dans les logs backend). Pages /forgot-password et /reset-password.
   Env : FRONTEND_URL, RESEND_API_KEY, RESEND_FROM. Backlog mineur : rate-limit forgot-password,
   TTL index sur password_reset_tokens.
+- [x] **Fix OAuth Google (VPS)** (2026-06-14, testé 6/6) : (1) redirect_uri_mismatch — le callback
+  accepte /api/google/callback ET /api/google/oauth/callback (double décorateur) ; (2) PKCE
+  « Missing code verifier » — le code_verifier généré par google-auth-oauthlib au /google/login
+  est persisté chiffré dans `google_oauth_states` (sha256(state), upsert, purge 30 min) et
+  restauré via find_one_and_delete dans le callback avant fetch_token.
 - [ ] Recherche de nom : générer 50-100 propositions avec critères (domaines, marques, prononciation).
 
 ## Backlog / Phase 2 (P0)
