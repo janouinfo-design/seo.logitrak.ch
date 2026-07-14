@@ -112,6 +112,7 @@ async def google_login(user=Depends(get_current_user)):
 
 
 @api.get("/google/callback")
+@api.get("/google/oauth/callback")
 async def google_callback(code: str, state: str, scope: Optional[str] = None):
     """OAuth callback. Exchanges code for tokens, stores refresh_token, redirects to frontend /performance."""
     from google_auth_oauthlib.flow import Flow
@@ -165,8 +166,12 @@ async def google_callback(code: str, state: str, scope: Optional[str] = None):
     )
 
     # Redirect to frontend
-    # Frontend URL is derived from redirect_uri (replace /api/google/callback with /performance?google=connected)
-    frontend_url = GOOGLE_OAUTH_REDIRECT_URI.replace("/api/google/callback", "/performance?google=connected")
+    # Frontend URL is derived from redirect_uri (strip the API callback path)
+    frontend_url = (
+        GOOGLE_OAUTH_REDIRECT_URI
+        .replace("/api/google/oauth/callback", "/performance?google=connected")
+        .replace("/api/google/callback", "/performance?google=connected")
+    )
     return RedirectResponse(url=frontend_url)
 
 

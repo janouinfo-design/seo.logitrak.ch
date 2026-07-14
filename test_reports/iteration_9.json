@@ -1,0 +1,29 @@
+{
+  "summary": "Independent verification of Google OAuth redirect_uri_mismatch fix. All 6 backend tests pass and Performance page loads correctly with Google connect button visible and no 'not configured' warning.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_google_oauth_fix.py",
+    "/app/test_reports/pytest/google_oauth_fix.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes_google.py OK: dual decorator @api.get('/google/callback') + @api.get('/google/oauth/callback') on same handler is a valid FastAPI pattern; both paths return 400 on invalid state as expected.",
+    "redirect_uri returned by /api/google/login matches .env exactly: https://content-logi-pro.preview.emergentagent.com/api/google/oauth/callback — this eliminates Google 'redirect_uri_mismatch' error.",
+    "Recharts warnings (width/height=-1) on Performance page are cosmetic (ResponsiveContainer sizing timing) — not related to this fix."
+  ],
+  "updated_files": ["/app/backend/tests/test_google_oauth_fix.py"],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100%"},
+  "test_credentials": "demo@logirent.fr / demo1234 (login endpoint returns 'token', not 'access_token')",
+  "verified_behaviors": [
+    "GET /api/google/login → authorization_url with redirect_uri = https://content-logi-pro.preview.emergentagent.com/api/google/oauth/callback (exact match with .env)",
+    "GET /api/google/oauth/callback?code=x&state=invalid → 400 (new route exists)",
+    "GET /api/google/callback?code=x&state=invalid → 400 (legacy route still works — backward compat)",
+    "GET /api/google/status → server_configured:true, redirect_uri = .../api/google/oauth/callback",
+    "Regression OK: /api/linkedin/status, /api/meta/status, /api/gbp/status all 200; /api/meta/login and /api/gbp/login return authorization_url",
+    "Frontend /performance: no 'OAuth pas encore configuré' banner; 'Se connecter avec Google' button present; MOCKED data banner shown as expected"
+  ],
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Google OAuth fix (dual callback route) fully verified. Test file at /app/backend/tests/test_google_oauth_fix.py reusable for regression. NOTE: /api/auth/login response uses key 'token' not 'access_token'."
+}
