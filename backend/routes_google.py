@@ -25,8 +25,10 @@ GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/webmasters.readonly",
     "https://www.googleapis.com/auth/analytics.readonly",
     "openid",
-    "email",
+    "https://www.googleapis.com/auth/userinfo.email",
 ]
+# Google normalise/réordonne les scopes au retour → tolérer les variations
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 
 def _google_oauth_client_config() -> dict:

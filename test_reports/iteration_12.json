@@ -1,0 +1,23 @@
+{
+  "summary": "Validated Google OAuth scope fix in routes_google.py (lignes 24-31). New test file test_google_oauth_scope.py: 7/7 passed. Régression PKCE (test_google_oauth_pkce.py): 6/6 passed. authorization_url contient bien les 4 scopes canoniques (webmasters.readonly, analytics.readonly, openid, https://www.googleapis.com/auth/userinfo.email) sans le raccourci 'email'. OAUTHLIB_RELAX_TOKEN_SCOPE=1 effectif après import routes_google. Callback avec code bidon renvoie 400 'Échec d'échange du code OAuth' SANS 'Scope has changed' ni 'Missing code verifier'. /api/google/status 200, /api/auth/login demo OK, /api/agents/overview 200.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_google_oauth_scope.py",
+    "/app/backend/tests/test_google_oauth_pkce.py",
+    "/app/test_reports/pytest/google_oauth_scope.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "os.environ.setdefault('OAUTHLIB_RELAX_TOKEN_SCOPE','1') is executed at module import — OK for FastAPI startup, but if uvicorn preloads other oauthlib users before routes_google, the flag might arrive late. In pratique routes_google est importé via server.py au démarrage, donc OK. Envisager de le déplacer dans backend/.env pour cohérence.",
+    "GOOGLE_SCOPES inclut désormais l'URL canonique. Bonne pratique: aligner aussi la doc/config Google Cloud Console pour éviter que Google ajoute d'autres scopes granted (include_granted_scopes='true' peut aussi élargir le scope retourné — d'où le relax flag qui reste nécessaire)."
+  ],
+  "updated_files": ["/app/backend/tests/test_google_oauth_scope.py"],
+  "success_rate": {"backend": "100% (7/7 new + 6/6 PKCE regression)", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "demo@logirent.fr / demo1234",
+  "seed_data_creation": "None. Tests créent des docs google_oauth_states via /api/google/login (auto-purgés par le callback ou TTL 30min).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Scope fix + PKCE fix tous deux validés. Clés Google FACTICES en preview donc l'échange réel avec Google échoue toujours (400 invalid_grant/invalid_client) — critère de succès: absence de 'Scope has changed' ET 'Missing code verifier' dans la réponse. Tests réutilisables: /app/backend/tests/test_google_oauth_scope.py (scope) et test_google_oauth_pkce.py (PKCE).",
+  "rca of the issue": "google-auth-oauthlib normalise 'email' -> 'https://www.googleapis.com/auth/userinfo.email' au retour du token endpoint, provoquant une Warning->Error 'Scope has changed' dans oauthlib. Fix: (1) demander directement le scope canonique à l'authorization (pas de re-normalisation possible), (2) OAUTHLIB_RELAX_TOKEN_SCOPE=1 pour tolérer réordonnancement/ajouts granted."
+}
