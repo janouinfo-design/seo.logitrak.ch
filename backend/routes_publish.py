@@ -341,7 +341,7 @@ async def test_github_connection(site_id: str, user=Depends(get_current_user)):
             headers=_github_headers(token),
         )
         if repo_resp.status_code == 401:
-            raise HTTPException(401, "Token GitHub invalide ou expiré.")
+            raise HTTPException(400, "Token GitHub invalide ou expiré.")
         if repo_resp.status_code == 404:
             # Distinguish: repo missing vs repo exists but empty / branch missing
             check = await client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}", headers=_github_headers(token))

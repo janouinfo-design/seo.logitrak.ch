@@ -112,7 +112,7 @@ async def _get_meta_page(user_id: str, page_id: Optional[str], require_instagram
     m = (doc or {}).get("meta") or {}
     pages = m.get("pages") or []
     if not pages:
-        raise HTTPException(401, "Compte Meta non connecté. Connectez Facebook/Instagram d'abord.")
+        raise HTTPException(400, "Compte Meta non connecté. Connectez Facebook/Instagram d'abord.")
     if require_instagram:
         pages = [p for p in pages if p.get("instagram_id")]
         if not pages:
@@ -270,7 +270,7 @@ async def _get_gbp_access_token(user_id: str) -> str:
     doc = await db.users.find_one({"id": user_id}, {"gbp": 1, "_id": 0})
     g = (doc or {}).get("gbp") or {}
     if not g.get("refresh_token"):
-        raise HTTPException(401, "Google Business Profile non connecté.")
+        raise HTTPException(400, "Google Business Profile non connecté.")
     from social_publishing import gbp_access_token
     return await gbp_access_token(GBP_CLIENT_ID, GBP_CLIENT_SECRET, dec(g["refresh_token"]))
 

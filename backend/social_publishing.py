@@ -80,7 +80,7 @@ async def meta_publish_facebook(page_id: str, page_token: str, message: str,
             r = await client.post(f"{GRAPH}/{page_id}/feed", data=data)
     if r.status_code not in (200, 201):
         if r.status_code == 401 or "OAuthException" in r.text:
-            raise HTTPException(401, f"Token Facebook expiré ou permissions manquantes. Reconnectez Meta. ({r.text[:200]})")
+            raise HTTPException(400, f"Token Facebook expiré ou permissions manquantes. Reconnectez Meta. ({r.text[:200]})")
         raise HTTPException(502, f"Publication Facebook échouée: {r.text[:300]}")
     j = r.json()
     post_id = j.get("post_id") or j.get("id") or ""
@@ -139,7 +139,7 @@ async def gbp_access_token(client_id: str, client_secret: str, refresh_token: st
             "grant_type": "refresh_token",
         })
     if r.status_code != 200:
-        raise HTTPException(401, f"Token Google Business expiré ou révoqué. Reconnectez votre compte. ({r.text[:200]})")
+        raise HTTPException(400, f"Token Google Business expiré ou révoqué. Reconnectez votre compte. ({r.text[:200]})")
     return r.json()["access_token"]
 
 

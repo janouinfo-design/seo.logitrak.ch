@@ -152,7 +152,7 @@ async def _get_linkedin_access_token(user_id: str) -> tuple[str, str]:
     udoc = await db.users.find_one({"id": user_id}, {"linkedin": 1, "_id": 0})
     li = (udoc or {}).get("linkedin") or {}
     if not li.get("access_token"):
-        raise HTTPException(401, "LinkedIn non connecté.")
+        raise HTTPException(400, "LinkedIn non connecté.")
     access_token = dec(li["access_token"])
     member_urn = li.get("member_urn")
     if not member_urn:
@@ -229,7 +229,7 @@ async def publish_draft_to_linkedin(draft_id: str, user=Depends(get_current_user
         )
         if resp.status_code not in (200, 201, 202):
             if resp.status_code == 401:
-                raise HTTPException(401, "Token LinkedIn expiré ou révoqué. Reconnectez votre compte LinkedIn.")
+                raise HTTPException(400, "Token LinkedIn expiré ou révoqué. Reconnectez votre compte LinkedIn.")
             raise HTTPException(502, f"LinkedIn UGC post error {resp.status_code}: {resp.text[:400]}")
         data = resp.json()
         post_urn = data.get("id") or data.get("urn") or ""

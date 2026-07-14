@@ -16,7 +16,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err?.response?.status === 401) {
+    // Auto-logout only for session-auth failures — never for third-party
+    // credential errors (GitHub PAT, Meta, Google...) which use 400.
+    const url = err?.config?.url || "";
+    const isThirdParty = /test-github|test-ftp|publish-|\/meta\/|\/gbp\/|\/linkedin\/|\/google\//.test(url);
+    if (err?.response?.status === 401 && !isThirdParty) {
       localStorage.removeItem("logi_token");
       localStorage.removeItem("logi_user");
       if (window.location.pathname !== "/login" && window.location.pathname !== "/register") {

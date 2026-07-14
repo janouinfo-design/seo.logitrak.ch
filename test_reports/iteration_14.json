@@ -1,0 +1,26 @@
+{
+  "summary": "RETEST validated: the axios auto-logout regression from iteration 13 is fixed. Backend now returns 400 (instead of 401) for third-party credential errors, and the frontend axios interceptor only redirects to /login for real session 401s. Reproduction scenario passes end-to-end: login demo → /sites → Publication GitHub dialog → fake token 'ghp_faketoken...' + owner someuser / repo somerepo → Save → Tester la connexion → backend returns HTTP 400 'Token GitHub invalide ou expiré.', user REMAINS on /sites, error card [data-testid=github-test-error] shows the message. True session 401 still works (bogus Bearer on /api/sites returns 401; corrupting logi_token in localStorage and navigating to /drafts correctly redirects to /login).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_github_test_connection.py",
+    "/app/backend/tests/test_third_party_credentials_400.py",
+    "/app/test_reports/pytest/iteration_14.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Interceptor URL-regex approach (/app/frontend/src/lib/api.js L21-23) is pragmatic. Longer term, prefer a positive rule (auto-logout only when url endsWith /auth/me OR the response has a specific header like WWW-Authenticate: Bearer realm=session) so new third-party endpoints don't need to be added to the deny-list.",
+    "Backend consistency check OK: routes_publish.py L344 (400 Token GitHub invalide), routes_social.py, routes_linkedin.py, routes_google.py, social_publishing.py all now use 400 for third-party credential errors — verified live via /publish-facebook, /publish-gbp and /gbp/locations (all return 400 without connected accounts)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_github_test_connection.py (renamed test_fake_token_returns_401 → test_fake_token_returns_400, updated assertion 401→400)",
+    "/app/backend/tests/test_third_party_credentials_400.py (new — covers publish-facebook, publish-gbp, gbp/locations return 400 without third-party accounts, and bogus Bearer still returns 401)"
+  ],
+  "success_rate": {"backend": "100% (9/9 pytest)", "frontend": "100% (reproduction scenario passes + session-expiry still works)"},
+  "test_credentials": "demo@logirent.fr / demo1234",
+  "seed_data_creation": "Fake GitHub config written on site Logirent (b3bec42d...) during the test, then cleared: verified via GET → has_github_token=false, github_owner='', github_repo=''.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The 401→400 refactor is fully validated (backend + frontend). Interceptor uses a URL regex allow-list of third-party endpoints — if new third-party integrations are added later (e.g., /wix/, /shopify/), remember to add them to the regex in /app/frontend/src/lib/api.js L22 or migrate to a positive rule based on /auth/me only.",
+  "rca of the issue": "N/A (bug fix verified). Fix confirmed on both sides: backend returns 400 for external credential failures, and axios interceptor at /app/frontend/src/lib/api.js only triggers logout for 401s whose URL is NOT test-github|test-ftp|publish-|/meta/|/gbp/|/linkedin/|/google/. Reproduction of iteration 13 scenario now yields expected behaviour: user stays logged in, red error card 'Token GitHub invalide ou expiré.' is displayed inside the dialog."
+}

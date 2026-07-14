@@ -2,7 +2,7 @@
 
 Covers:
 1. Missing GitHub config → 400.
-2. Fake token → 401 from GitHub.
+2. Fake token → 400 (third-party credential error, distinct from session 401).
 3. Unit-level mock tests for the 3 branches of the 404 fallback logic:
    (a) repo exists and size==0 → "VIDE" + "README" message
    (b) repo exists and size>0 → "la branche" + "introuvable"
@@ -90,7 +90,7 @@ class TestTestGithubEndpoint:
         detail = r.json().get("detail", "")
         assert "Configurez d'abord" in detail or "github_token" in detail
 
-    def test_fake_token_returns_401(self, api_client):
+    def test_fake_token_returns_400(self, api_client):
         # Patch with a fake token / owner / repo
         r = api_client.patch(
             f"{BASE_URL}/api/sites/{SITE_ID}",
@@ -113,9 +113,9 @@ class TestTestGithubEndpoint:
         assert pub.get("github_owner") == "someuser"
         assert pub.get("github_repo") == "somerepo"
 
-        # Now test-github should propagate the 401 from GitHub
+        # Now test-github should return 400 (third-party credential error, not session 401)
         r = api_client.post(f"{BASE_URL}/api/sites/{SITE_ID}/test-github", timeout=20)
-        assert r.status_code == 401, f"expected 401 got {r.status_code}: {r.text[:200]}"
+        assert r.status_code == 400, f"expected 400 got {r.status_code}: {r.text[:200]}"
         detail = r.json().get("detail", "")
         assert "Token GitHub invalide" in detail or "expiré" in detail
 

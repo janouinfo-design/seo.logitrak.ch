@@ -53,7 +53,7 @@ async def _get_google_credentials(user_id: str):
     doc = await db.users.find_one({"id": user_id}, {"google_oauth": 1, "_id": 0})
     gc = (doc or {}).get("google_oauth")
     if not gc or not gc.get("refresh_token"):
-        raise HTTPException(401, "Google non connecté. Connectez votre compte Google dans la page Performance.")
+        raise HTTPException(400, "Google non connecté. Connectez votre compte Google dans la page Performance.")
     creds = Credentials(
         token=dec(gc.get("access_token")),
         refresh_token=dec(gc["refresh_token"]),
@@ -74,7 +74,7 @@ async def _get_google_credentials(user_id: str):
             )
         except Exception as exc:
             logger.warning("Google refresh failed for user %s: %s", user_id, exc)
-            raise HTTPException(401, f"Token Google expiré ou révoqué. Reconnectez votre compte Google. ({exc})")
+            raise HTTPException(400, f"Token Google expiré ou révoqué. Reconnectez votre compte Google. ({exc})")
     return creds
 
 
