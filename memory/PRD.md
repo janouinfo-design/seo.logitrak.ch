@@ -187,6 +187,13 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   restauré via find_one_and_delete dans le callback avant fetch_token ; (3) « Scope has changed »
   — scope canonique userinfo.email (au lieu de « email ») + OAUTHLIB_RELAX_TOKEN_SCOPE=1
   (testé 7/7 + régression PKCE 6/6).
+- [x] **Fix « Tester la connexion » GitHub + 401 auto-logout** (2026-06-14, testé 100% back+front) :
+  (1) diagnostic 404 en 3 branches (repo VIDE → initialiser README / branche manquante / repo
+  inaccessible) dans routes_publish.py test-github ; (2) les erreurs de credentials tiers
+  (GitHub PAT, Meta, GBP, LinkedIn, Google) renvoient 400 au lieu de 401 — le 401 est réservé
+  à la session app ; (3) intercepteur axios (lib/api.js) : auto-logout uniquement sur vrais 401
+  session (regex d'exclusion des endpoints tiers). Tests : tests/test_github_test_connection.py,
+  tests/test_third_party_credentials_400.py.
 - [ ] Recherche de nom : générer 50-100 propositions avec critères (domaines, marques, prononciation).
 
 ## Backlog / Phase 2 (P0)
