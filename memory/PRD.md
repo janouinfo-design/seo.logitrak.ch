@@ -184,7 +184,9 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   accepte /api/google/callback ET /api/google/oauth/callback (double décorateur) ; (2) PKCE
   « Missing code verifier » — le code_verifier généré par google-auth-oauthlib au /google/login
   est persisté chiffré dans `google_oauth_states` (sha256(state), upsert, purge 30 min) et
-  restauré via find_one_and_delete dans le callback avant fetch_token.
+  restauré via find_one_and_delete dans le callback avant fetch_token ; (3) « Scope has changed »
+  — scope canonique userinfo.email (au lieu de « email ») + OAUTHLIB_RELAX_TOKEN_SCOPE=1
+  (testé 7/7 + régression PKCE 6/6).
 - [ ] Recherche de nom : générer 50-100 propositions avec critères (domaines, marques, prononciation).
 
 ## Backlog / Phase 2 (P0)
