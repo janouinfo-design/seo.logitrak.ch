@@ -172,6 +172,14 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   Tous les modules s'enregistrent sur le router partagé `api` d'app_core, imports en ordre DAG
   (billing avant content pour le quota ; linkedin avant pipeline). 105/105 routes préservées.
   Sauvegarde du monolithe : /tmp/server_monolith.bak (hors repo).
+- [x] **Login amélioré + réinitialisation de mot de passe** (2026-06-14, testé 100% back+front) :
+  bloc « Compte démo » supprimé de la page login, œil afficher/masquer mot de passe,
+  attributs autocomplete/name pour LastPass (login/register/reset), flux « Mot de passe oublié » :
+  `POST /api/auth/forgot-password` (anti-énumération, token sha256 1h, collection
+  password_reset_tokens) + `POST /api/auth/reset-password`. Email via Resend si RESEND_API_KEY
+  (sinon lien dans les logs backend). Pages /forgot-password et /reset-password.
+  Env : FRONTEND_URL, RESEND_API_KEY, RESEND_FROM. Backlog mineur : rate-limit forgot-password,
+  TTL index sur password_reset_tokens.
 - [ ] Recherche de nom : générer 50-100 propositions avec critères (domaines, marques, prononciation).
 
 ## Backlog / Phase 2 (P0)
