@@ -1,0 +1,41 @@
+{
+  "summary": "Validated the improved POST /api/sites/{site_id}/test-github endpoint (routes_publish.py, 3-branch 404 fallback) and its integration in the Publication GitHub dialog. Backend: 5/5 pytest passed (400 no-config, 401 fake token, and 3 monkeypatched branches for empty repo / missing branch / inaccessible). Frontend: dialog opens, all 5 fields present, PATCH persists config encrypted (has_github_token=true, raw token NOT returned), 'Tester la connexion' click triggers backend which correctly returns 401 with detail 'Token GitHub invalide ou expiré'. However a critical integration bug was discovered: the global axios 401 interceptor (frontend/src/lib/api.js) forcibly logs the user out and redirects to /login on ANY 401, including GitHub-PAT validation 401s. The 'github-test-error' UI card is therefore never shown for the 401 branch, and the user is silently signed out.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Publication GitHub — Tester la connexion avec token invalide",
+        "issue": "L'intercepteur axios global considère TOUT 401 comme session expirée (frontend/src/lib/api.js L19-25). Quand /api/sites/{id}/test-github renvoie 401 'Token GitHub invalide', l'app efface le logi_token et redirige vers /login. Résultat: (a) l'utilisateur est deconnecté de l'app pour un problème GitHub PAT (b) le message d'erreur métier n'est jamais affiché (c) toast/ghTestResult.error non visibles. Il faut soit exclure /test-github (et /test-ftp) de l'auto-logout, soit distinguer 401 de l'endpoint /api/auth/me / autres endpoints métier.",
+        "affected_selectors": ["[data-testid='github-test-error']", "[data-testid='github-test-button']"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_github_test_connection.py",
+    "/app/test_reports/pytest/github_test_connection.xml"
+  ],
+  "action_items": [
+    "Fix axios 401 interceptor in /app/frontend/src/lib/api.js: do NOT auto-logout on 401 coming from /sites/*/test-github (et par extension /sites/*/test-ftp). Solution simple: vérifier err.config.url et skip la redirection pour ces routes, ou n'auto-logout que sur 401 de /auth/me. Sinon la nouvelle logique explicite 401/404 du backend reste invisible pour l'utilisateur."
+  ],
+  "critical_code_review_comments": [
+    "Global 401 interceptor is too aggressive — any endpoint that legitimately returns 401 for non-session reasons (external API auth failure, GitHub PAT, Wix API key, VPS token) will log the user out. Consider filtering on request URL or on a specific WWW-Authenticate header.",
+    "routes_publish.py 3-branch 404 fallback is well written and covered by tests; messages are clear and actionable (mentions README init, Settings→Branches, Contents: Read & write).",
+    "routes_sites.py: encrypted fields (github_token, wix_api_key, vps_api_token, ftp_password) are properly excluded from GET responses; has_github_token boolean is exposed correctly.",
+    "PATCH /sites empty-string handling: sending github_owner='' saves as '' rather than null (see cleanup) — cosmetic only since has_github_token=false and the endpoint blocks with 400 anyway."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_github_test_connection.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "80%"},
+  "test_credentials": "demo@logirent.fr / demo1234 (site Logirent id b3bec42d-2117-4f73-93b9-a0adc3b47a38)",
+  "seed_data_creation": "None. Test data (fake github config) written via PATCH was cleaned up in the test module teardown fixture AND re-verified via a final manual PATCH — has_github_token=false, github_owner='', github_repo='' after run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend logic for test-github is 100% verified. The pytest file test_github_test_connection.py loads REACT_APP_BACKEND_URL from /app/frontend/.env if absent from the environment. pytest-asyncio 1.4.0 was installed (was missing). If the main agent patches the axios 401 interceptor, re-run the frontend Playwright smoke to confirm the error card appears when clicking Tester with a fake token, instead of being redirected to /login.",
+  "rca of the issue": "Root cause: /app/frontend/src/lib/api.js contains a blanket response interceptor: `if (err?.response?.status === 401) { localStorage.removeItem('logi_token'); ... window.location.href='/login' }`. This is applied to every axios call including /sites/{id}/test-github. Since the backend was UPGRADED to distinguish auth-token issues (401) from repo/branch issues (404), the 401 return for 'Token GitHub invalide' now silently logs the user out instead of surfacing the friendly message. Reproduction: login as demo@logirent.fr → /sites → click Configurer GitHub sur Logirent → saisir token 'ghp_faketoken...' owner 'someuser' repo 'somerepo' → Tester la connexion → observe network tab: PATCH 200, POST /test-github 401, page redirected to /login, no error card. Mitigation: exclure les URLs /sites/*/test-* (voire tous les endpoints non-auth) de l'auto-logout dans l'intercepteur, ou n'agir que si err.config.url.endsWith('/auth/me')."
+}

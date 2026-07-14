@@ -343,7 +343,20 @@ async def test_github_connection(site_id: str, user=Depends(get_current_user)):
         if repo_resp.status_code == 401:
             raise HTTPException(401, "Token GitHub invalide ou expiré.")
         if repo_resp.status_code == 404:
-            raise HTTPException(404, f"Repo introuvable ou branche '{branch}' inexistante. Vérifiez owner/repo/branch et les permissions du token.")
+            # Distinguish: repo missing vs repo exists but empty / branch missing
+            check = await client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}", headers=_github_headers(token))
+            if check.status_code == 200:
+                if check.json().get("size", 0) == 0:
+                    raise HTTPException(404, (
+                        f"Le repo '{owner}/{repo}' existe mais est VIDE (aucun commit) — la branche '{branch}' "
+                        f"n'existe donc pas encore. Sur GitHub, cliquez « creating a new file » (ou « Add a README ») "
+                        f"pour créer un premier fichier et initialiser la branche, puis retestez."
+                    ))
+                raise HTTPException(404, (
+                    f"Le repo '{owner}/{repo}' existe mais la branche '{branch}' est introuvable. "
+                    f"Vérifiez le nom de la branche (Settings → Branches sur GitHub) ou utilisez la branche par défaut."
+                ))
+            raise HTTPException(404, f"Repo '{owner}/{repo}' introuvable ou inaccessible avec ce token. Vérifiez owner/repo et que le token a bien accès à ce repo (Contents: Read & write).")
         if repo_resp.status_code != 200:
             raise HTTPException(502, f"Erreur GitHub ({repo_resp.status_code}): {repo_resp.text[:200]}")
         repo_data = repo_resp.json()
