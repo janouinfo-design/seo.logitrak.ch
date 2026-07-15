@@ -1,0 +1,34 @@
+{
+  "summary": "Content generation JSON-repair fix is VALIDATED end-to-end. (1) Unit tests for ai_visibility._parse_llm_json: 7/7 pass (valid, fenced, truncated-in-string, truncated-after-key, plain text raises, leading text) — the _repair_json algorithm correctly closes open strings/brackets and returns a usable dict for truncated Claude responses. (2) Code review of routes_content.py _do_generate_content (L195-218) confirms the fix: .with_params(max_tokens=16000) applied, _parse_llm_json imported from ai_visibility, 2-attempt retry loop with a NEW LlmChat session per attempt (session_id=f'gen-{user_id}-{gen_id()}' recomputed inside the loop), clean HTTPException 502 fallback if both attempts fail. (3) E2E generation on demo@logirent.fr with site Logirent (b3bec42d...) topic 'Location de voiture longue durée à Genève pour entreprises' completed in ~75s via /content/generate-async (sync endpoint hits Cloudflare 60s ingress timeout — see NOTE below), producing a full draft: title 74 chars, meta_title, meta_description, body_markdown 8594 chars starting with '# Location...\\n## Réponse Courte', 6 FAQ items, 8 keywords, real Pexels cover_image_url + alt + credit. (4) Regression: GET /api/drafts lists the new draft (17 total, target present, sorted newest first); GET /api/drafts/{id} → 200; frontend page /drafts/09581e86-ab63-46b6-807c-9c94e7440c73 renders the H1, markdown editor filled, and 'Image de couverture' panel with Pexels photo + credit 'Photo par Uiliam Nörnberg sur Pexels' + 'Régénérer l'image' button. No console errors on the draft page.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/content/generate (synchronous)", "issue": "Cloudflare ingress terminates the request at ~60s with HTTP 502 while the backend continues processing (LiteLLM call still runs). The problem statement expected the sync endpoint to work with curl --max-time 240, but the CF layer caps it. The async endpoint /content/generate-async + /content/jobs/{id} works perfectly (used for the E2E verification). Recommendation: make the frontend use the async endpoint exclusively for content generation, and consider marking the sync endpoint as deprecated. This is NOT a regression of the JSON-repair fix — it is a network/ingress timeout unrelated to the reported bug."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_generation_json_repair.py",
+    "/app/test_reports/pytest/iteration_15_json_repair.xml"
+  ],
+  "action_items": [
+    "Consider migrating the frontend content generation flow to /api/content/generate-async (poll /content/jobs/{id}) to avoid the ~60s Cloudflare timeout on the sync endpoint. Generation typically takes 60-90s so the sync path is intrinsically fragile behind CF.",
+    "Optional: add a data-testid on the draft cover-image panel and the draft H1 for future automated coverage (not blocking)."
+  ],
+  "critical_code_review_comments": [
+    "routes_content.py L200-205: chat = LlmChat(...) is correctly RECREATED inside the retry loop (new session_id per attempt via gen_id()), matching the pattern used in keyword_intelligence.py — good.",
+    "routes_content.py L207-210: LLM transport exceptions immediately raise HTTPException(502) WITHOUT retrying. If the first attempt fails at the network layer (timeout, 5xx), the retry loop is skipped. Consider moving the network try/except INSIDE the retry so a transient LLM failure also triggers the second attempt.",
+    "ai_visibility._repair_json L359-384: the truncation repair is naive but effective for Claude outputs. Tests confirm it handles open strings and open brackets. Edge case: if truncation lands right after a colon (e.g., '{\"k\":') the trailing regex removes '\"k\":' and closing braces are appended — dict comes back without that key, which is acceptable.",
+    "routes_content.py L217-218: on final failure the raised message is 'Réponse IA non parsable après 2 tentatives : {last_err}'. Compared to the old cryptic 'Erreur inattendue : Expecting , delimiter...', this is much clearer for the end user — good improvement."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_generation_json_repair.py (new — 7 unit tests for _parse_llm_json / _repair_json)"
+  ],
+  "success_rate": {"backend": "100% (7/7 unit tests + E2E generation success with full valid draft)", "frontend": "100% (draft page renders title, markdown, cover image)"},
+  "test_credentials": "demo@logirent.fr / demo1234",
+  "seed_data_creation": "One real draft created for site Logirent: id=09581e86-ab63-46b6-807c-9c94e7440c73, title 'Location de Voiture Longue Durée à Genève pour Entreprises : Guide Complet 2024', 8594-char body. Consumed 1 generation from the Free plan monthly quota.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The JSON repair + max_tokens=16000 + 2-attempt retry fix in routes_content.py is fully validated. Note that the SYNC /api/content/generate endpoint returns 502 through Cloudflare after ~60s even though the backend keeps working — always test generation via /api/content/generate-async + /api/content/jobs/{job_id}. Real Pexels + Emergent LLM keys are working in this preview.",
+  "rca of the issue": "Original bug 'Expecting , delimiter: line 22 column 6 (char 12937)' was Claude's JSON response being truncated at Claude's default max_tokens (~4096) mid-string. The fix applies three layers of defence: (a) request 16000 tokens so long articles fit, (b) parse with _parse_llm_json which strips ```fences, falls back to regex JSON extraction, and finally invokes _repair_json to close open strings/brackets — verified on truncated fixtures in the unit test, (c) if parsing still fails, a second attempt is made with a fresh LlmChat session. All three layers are in place and the live E2E run produced a well-formed 8594-char article on the first attempt."
+}

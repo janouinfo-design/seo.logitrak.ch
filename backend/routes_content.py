@@ -192,34 +192,30 @@ Instructions supplémentaires : {req.extra_instructions or '(aucune)'}
 
 Réponds en JSON strict selon le format imposé."""
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"gen-{user['id']}-{gen_id()}",
-        system_message=SYSTEM_PROMPT,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    from ai_visibility import _parse_llm_json
 
-    try:
-        response = await chat.send_message(UserMessage(text=user_prompt))
-    except Exception as exc:
-        logger.exception("LLM call failed")
-        raise HTTPException(502, f"Erreur génération IA : {exc}")
-
-    # Parse JSON (Claude returns JSON in response text)
-    import json
-    text = response if isinstance(response, str) else str(response)
-    # Strip code fences
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-    try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError:
-        # Try to extract first {...} block
-        m = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if not m:
-            raise HTTPException(502, "Réponse IA non parsable")
-        data = json.loads(m.group(0))
+    response = None
+    data = None
+    last_err = None
+    for attempt in range(2):
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"gen-{user['id']}-{gen_id()}",
+            system_message=SYSTEM_PROMPT,
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929").with_params(max_tokens=16000)
+        try:
+            response = await chat.send_message(UserMessage(text=user_prompt))
+        except Exception as exc:
+            logger.exception("LLM call failed")
+            raise HTTPException(502, f"Erreur génération IA : {exc}")
+        try:
+            data = _parse_llm_json(response if isinstance(response, str) else str(response))
+            break
+        except Exception as exc:
+            last_err = exc
+            logger.warning("Génération : JSON invalide (tentative %s/2) : %s", attempt + 1, exc)
+    if data is None:
+        raise HTTPException(502, f"Réponse IA non parsable après 2 tentatives : {last_err}")
 
     draft = {
         "id": gen_id(),
