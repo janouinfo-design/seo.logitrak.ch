@@ -206,8 +206,9 @@ Réponds en JSON strict selon le format imposé."""
         try:
             response = await chat.send_message(UserMessage(text=user_prompt))
         except Exception as exc:
-            logger.exception("LLM call failed")
-            raise HTTPException(502, f"Erreur génération IA : {exc}")
+            last_err = exc
+            logger.warning("LLM call failed (tentative %s/2) : %s", attempt + 1, exc)
+            continue
         try:
             data = _parse_llm_json(response if isinstance(response, str) else str(response))
             break

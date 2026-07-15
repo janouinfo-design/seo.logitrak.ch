@@ -194,6 +194,11 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   à la session app ; (3) intercepteur axios (lib/api.js) : auto-logout uniquement sur vrais 401
   session (regex d'exclusion des endpoints tiers). Tests : tests/test_github_test_connection.py,
   tests/test_third_party_credentials_400.py.
+- [x] **Fix génération d'article « Expecting ',' delimiter »** (2026-06-14, testé 7/7 unit + E2E
+  100%) : réponse Claude tronquée à max_tokens par défaut → routes_content._do_generate_content
+  utilise désormais max_tokens=16000 + _parse_llm_json/_repair_json (ai_visibility) + retry
+  2 tentatives (y compris erreurs réseau). Tests : tests/test_generation_json_repair.py.
+  Note : frontend utilise /content/generate-async (polling) — nginx VPS timeout 120s OK.
 - [ ] Recherche de nom : générer 50-100 propositions avec critères (domaines, marques, prononciation).
 
 ## Backlog / Phase 2 (P0)
