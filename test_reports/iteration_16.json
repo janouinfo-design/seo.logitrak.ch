@@ -1,0 +1,36 @@
+{
+  "summary": "Backend-only validation of the GitHub 403 graceful error fix. Verified _GITHUB_403_MSG contents, endpoints return proper French HTTPException (400 on invalid token via GitHub 401, 400 on missing github config), regression on /api/sites, /api/drafts, /api/publish-logs. Found ONE gap vs the spec: _github_get_file_sha does NOT explicitly handle status 403 — it raises HTTPException(502) for any non-200/404, so a read-only token that returns 403 on GET contents will surface as a raw 502 instead of the friendly _GITHUB_403_MSG.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "_github_get_file_sha (helper in /app/backend/routes_publish.py, called from POST /api/drafts/{id}/publish-github)",
+        "issue": "Function does not have an explicit `if resp.status_code == 403: raise HTTPException(403, _GITHUB_403_MSG)` branch. Any 403 from GET /repos/{owner}/{repo}/contents/{path} is bucketed into the generic 502 branch, so end-users get a raw '502 GitHub GET contents a échoué (403): ...' instead of the friendly French _GITHUB_403_MSG. Spec (point 3) explicitly requires HTTPException(403) on 403."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_github_403_handling.py",
+    "/app/test_reports/pytest/iteration_16.xml"
+  ],
+  "action_items": [
+    "In /app/backend/routes_publish.py::_github_get_file_sha, add:\n    if resp.status_code == 403:\n        raise HTTPException(403, _GITHUB_403_MSG)\nbefore the generic 502 fallback (mirror what _github_put_file already does). This satisfies spec point 3 and gives the user the same friendly guidance whether the token is missing 'Contents: Read and write' on the read pre-check or on the write itself."
+  ],
+  "critical_code_review_comments": [
+    "routes_publish.py is 727 lines — approaching the split threshold. Consider extracting the GitHub helpers (_GITHUB_403_MSG, _github_headers, _github_get_file_sha, _github_put_file, _github_update_sitemap, test_github_connection, publish_draft_to_github) into a dedicated routes_publish_github.py module.",
+    "Duplicate literal 'GitHub n'est pas configuré / Configurez d'abord github_token...' between test_github_connection (line 346) and publish_draft_to_github (line 439). Extract to a shared _GITHUB_NOT_CONFIGURED_MSG constant.",
+    "_github_get_file_sha handles only 200/404 explicitly — every other non-200 (401 invalid token, 403 read-only, 5xx) becomes an opaque 502. Should mirror _github_put_file's explicit 401/403 handling.",
+    "test_github_connection performs the same GET /repos/{owner}/{repo} call twice: once implicitly via the /branches/{branch} endpoint (repo_resp) and again for the permission check (perm_resp). Fetching /repos/{owner}/{repo} once already returns permissions AND default_branch — could be consolidated."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_github_403_handling.py (new)"
+  ],
+  "success_rate": {"backend": "88% (7/8 assertions passed; 1 test skipped for lack of test-site draft; 1 documented gap flagged)"},
+  "test_credentials": "demo@logirent.fr / demo1234 (login OK, token returned).",
+  "seed_data_creation": "Created a temporary url_crawl site (label='Autre', name='TEST_gh403_site') per test and deleted it in fixture teardown. No persistent test data left in DB.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Live tests confirmed: (a) POST /api/sites/{id}/test-github with no github_* config → 400 'Configurez d'abord github_token, github_owner et github_repo sur ce site.' (b) same endpoint with fake token 'ghp_faketoken123...' + real owner/repo → 400 'Token GitHub invalide ou expiré.' (i.e. GitHub 401 → HTTPException(400) mapped correctly). (c) publish-github with nonexistent draft id → 404 'Brouillon introuvable'. Static verification confirmed _GITHUB_403_MSG mentions 'Contents : Read and write', _github_put_file raises HTTPException(403, _GITHUB_403_MSG) on both 403 and 404, and test_github_connection checks permissions.push and mentions 'ÉCRITURE' in its 403 message. The ONLY gap versus spec is _github_get_file_sha missing an explicit 403 branch.",
+  "rca of the issue": "Bug context: user's fine-grained PAT lacked 'Contents: Read and write'. GitHub answers 403 (or 404 masking 403) on PUT /contents. Fix in this session added _GITHUB_403_MSG plus explicit handling in _github_put_file and a proactive push-permission check in test_github_connection. Reproduction of the raw 500/502 path is now impossible via the write endpoint. Residual gap: the *read* helper _github_get_file_sha is invoked BEFORE _github_put_file on each publish; if a token can PUT but not GET (unlikely) or if GitHub returns 403 on that GET, users will still see a 502 wrapper. Mitigation: add the 403 branch as noted in action_items."
+}

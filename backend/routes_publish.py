@@ -263,6 +263,12 @@ async def test_ftp_connection(site_id: str, user=Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 GITHUB_API_BASE = "https://api.github.com"
 GITHUB_API_VERSION = "2022-11-28"
+_GITHUB_403_MSG = (
+    "Permission d'écriture refusée par GitHub (403). Votre token n'a pas la permission "
+    "« Contents : Read and write » sur ce repo. Sur GitHub : Settings → Developer settings → "
+    "Personal access tokens → Fine-grained tokens → votre token → Permissions → Contents → "
+    "« Read and write », puis cliquez Update. Le token reste le même, pas besoin de le re-saisir."
+)
 
 
 def _github_headers(token: str) -> dict:
@@ -307,6 +313,10 @@ async def _github_put_file(
     if sha:
         payload["sha"] = sha
     resp = await client.put(url, headers=_github_headers(token), json=payload)
+    if resp.status_code == 403:
+        raise HTTPException(403, _GITHUB_403_MSG)
+    if resp.status_code == 404:
+        raise HTTPException(403, _GITHUB_403_MSG + " (GitHub renvoie 404 quand le token n'a pas accès en écriture à ce repo.)")
     if resp.status_code not in (200, 201):
         raise HTTPException(
             502,
@@ -342,6 +352,8 @@ async def test_github_connection(site_id: str, user=Depends(get_current_user)):
         )
         if repo_resp.status_code == 401:
             raise HTTPException(400, "Token GitHub invalide ou expiré.")
+        if repo_resp.status_code == 403:
+            raise HTTPException(403, _GITHUB_403_MSG)
         if repo_resp.status_code == 404:
             # Distinguish: repo missing vs repo exists but empty / branch missing
             check = await client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}", headers=_github_headers(token))
@@ -360,7 +372,18 @@ async def test_github_connection(site_id: str, user=Depends(get_current_user)):
         if repo_resp.status_code != 200:
             raise HTTPException(502, f"Erreur GitHub ({repo_resp.status_code}): {repo_resp.text[:200]}")
         repo_data = repo_resp.json()
-        # 2. List target folder (if specified) to confirm path
+        # 2. Verify WRITE permission (Contents: Read and write) on the repo
+        perm_resp = await client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}", headers=_github_headers(token))
+        can_write = False
+        if perm_resp.status_code == 200:
+            perms = perm_resp.json().get("permissions") or {}
+            can_write = bool(perms.get("push") or perms.get("maintain") or perms.get("admin"))
+        if not can_write:
+            raise HTTPException(403, (
+                "Connexion OK en LECTURE, mais le token n'a PAS la permission d'ÉCRITURE sur "
+                f"'{owner}/{repo}' — la publication échouera (403). " + _GITHUB_403_MSG
+            ))
+        # 3. List target folder (if specified) to confirm path
         listing = []
         if folder:
             list_resp = await client.get(
@@ -389,6 +412,7 @@ async def test_github_connection(site_id: str, user=Depends(get_current_user)):
                     listing = [{"name": i.get("name"), "type": i.get("type")} for i in items[:20]]
         return {
             "ok": True,
+            "write_access": True,
             "owner": owner,
             "repo": repo,
             "branch": branch,
