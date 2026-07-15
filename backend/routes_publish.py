@@ -288,6 +288,8 @@ async def _github_get_file_sha(client: httpx.AsyncClient, token: str, owner: str
         return resp.json().get("sha")
     if resp.status_code == 404:
         return None
+    if resp.status_code == 403:
+        raise HTTPException(403, _GITHUB_403_MSG)
     raise HTTPException(
         502,
         f"GitHub GET contents a échoué ({resp.status_code}): {resp.text[:200]}"

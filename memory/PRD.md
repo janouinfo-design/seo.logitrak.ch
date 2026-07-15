@@ -201,6 +201,13 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   Note : frontend utilise /content/generate-async (polling) — nginx VPS timeout 120s OK.
 - [ ] Recherche de nom : générer 50-100 propositions avec critères (domaines, marques, prononciation).
 
+- [x] **Fix publication GitHub 403 (permissions token)** (2026-06-15, testé 7/7 backend iteration_16) :
+  cause = PAT fine-grained sans permission « Contents: Read and write ». Fix dans `routes_publish.py` :
+  (1) `_GITHUB_403_MSG` — message français expliquant comment corriger le token, (2) `_github_put_file`
+  et `_github_get_file_sha` interceptent 403/404 → HTTPException(403) claire, (3) `test_github_connection`
+  vérifie proactivement `permissions.push` via GET /repos/{owner}/{repo} et échoue avec message « ÉCRITURE »
+  si le token est read-only. Utilisateur a corrigé son token « LOGI SEO blog » (Contents: R/W + Update).
+
 ## Backlog / Phase 2 (P0)
 - [x] Génération en lot (batch) — fait (Automation.jsx)
 - [x] Calendrier éditorial cron — fait
