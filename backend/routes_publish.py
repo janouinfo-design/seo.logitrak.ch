@@ -86,6 +86,22 @@ def _markdown_to_html(md: str) -> str:
     return "\n".join(out)
 
 
+def _github_public_page_url(site: dict, slug: str) -> Optional[str]:
+    """Build the final public URL of a page published on GitHub, including the target folder.
+    Strips a leading 'public/' segment (Vite/CRA/Next serve public/ at the web root)."""
+    base = (site.get("github_public_url") or "").rstrip("/")
+    if not base:
+        return None
+    web_path = (site.get("github_folder") or "").strip("/")
+    if web_path == "public":
+        web_path = ""
+    elif web_path.startswith("public/"):
+        web_path = web_path[len("public/"):]
+    if web_path and not base.endswith("/" + web_path):
+        return f"{base}/{web_path}/{slug}.html"
+    return f"{base}/{slug}.html"
+
+
 def _render_html(draft: dict, site: dict) -> str:
     import json as _json
     title = draft.get("title", "")
@@ -95,8 +111,10 @@ def _render_html(draft: dict, site: dict) -> str:
     faq = draft.get("faq", []) or []
     keywords = draft.get("keywords", []) or []
     slug = _slugify(title)
-    canonical_base = (site.get("ftp_public_url") or site.get("base_url") or "").rstrip("/")
-    canonical = f"{canonical_base}/{slug}.html" if canonical_base else f"{slug}.html"
+    canonical = _github_public_page_url(site, slug)
+    if not canonical:
+        canonical_base = (site.get("ftp_public_url") or site.get("base_url") or "").rstrip("/")
+        canonical = f"{canonical_base}/{slug}.html" if canonical_base else f"{slug}.html"
     faq_html = ""
     faq_jsonld = ""
     if faq:
@@ -468,9 +486,8 @@ async def publish_draft_to_github(draft_id: str, user=Depends(get_current_user))
             res["updated"] = existing_sha is not None
             results.append(res)
         # Update sitemap.xml if public URL is configured
-        public_base = (site.get("github_public_url") or "").rstrip("/")
-        if public_base:
-            page_url = f"{public_base}/{slug}.html"
+        page_url = _github_public_page_url(site, slug)
+        if page_url:
             try:
                 sitemap_result = await _github_update_sitemap(client, token, owner, repo, branch, folder, page_url, slug)
             except Exception as exc:
@@ -478,8 +495,7 @@ async def publish_draft_to_github(draft_id: str, user=Depends(get_current_user))
                 sitemap_result = {"error": str(exc)}
 
     # Update draft status
-    public_base = (site.get("github_public_url") or "").rstrip("/")
-    public_url = f"{public_base}/{slug}.html" if public_base else None
+    public_url = _github_public_page_url(site, slug)
     await db.drafts.update_one(
         {"id": draft_id},
         {"$set": {
@@ -545,7 +561,9 @@ async def _github_update_sitemap(client, token, owner, repo, branch, folder, pag
             )
             action = "updated_existing_entry"
         else:
-            # Insert new entry before closing </urlset>
+            # Remove stale entries for the same slug (e.g. old URL without the folder), then append
+            stale_pattern = re.compile(r"\s*<url>(?:(?!</url>).)*?/" + re.escape(slug) + r"\.html</loc>(?:(?!</url>).)*?</url>", re.DOTALL)
+            existing_xml = stale_pattern.sub("", existing_xml)
             new_xml = existing_xml.replace("</urlset>", f"{new_entry}\n</urlset>")
             action = "appended_entry"
         target_path = existing_path
