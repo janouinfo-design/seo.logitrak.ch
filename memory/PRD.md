@@ -208,6 +208,16 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   vérifie proactivement `permissions.push` via GET /repos/{owner}/{repo} et échoue avec message « ÉCRITURE »
   si le token est read-only. Utilisateur a corrigé son token « LOGI SEO blog » (Contents: R/W + Update).
 
+- [x] **Fix URL publique GitHub + index du blog auto** (2026-06-15, testé 10/10 unit) : (1) `_github_public_page_url`
+  construit l'URL finale en incluant le dossier cible (`blog/` → `https://blog.logirent.ch/blog/slug.html`),
+  strip le préfixe `public/` (Vite/CRA). Utilisé pour l'URL annoncée, le canonical et le sitemap.
+  (2) Sitemap : nettoyage auto des entrées obsolètes du même slug (ancienne URL 404).
+  (3) `_github_update_blog_index` : à chaque publication, met à jour `articles.json` (racine repo) et
+  injecte les cartes d'articles dans `index.html` (div id="articles") → la page d'accueil du blog liste
+  les articles automatiquement. Tests: /app/backend/tests/test_blog_index.py.
+  Note utilisateur : HTTPS GitHub Pages activé (cert Let's Encrypt émis après re-save du custom domain),
+  token classique `repo` créé (les fine-grained posaient problème). Publication GitHub 100% fonctionnelle E2E.
+
 ## Backlog / Phase 2 (P0)
 - [x] Génération en lot (batch) — fait (Automation.jsx)
 - [x] Calendrier éditorial cron — fait

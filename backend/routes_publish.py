@@ -479,13 +479,14 @@ async def publish_draft_to_github(draft_id: str, user=Depends(get_current_user))
 
     results = []
     sitemap_result = None
+    blog_index_result = None
     async with httpx.AsyncClient(timeout=30.0) as client:
         for path, content in ((html_path, html_str), (json_path, json_str)):
             existing_sha = await _github_get_file_sha(client, token, owner, repo, path, branch)
             res = await _github_put_file(client, token, owner, repo, path, branch, commit_msg, content, existing_sha)
             res["updated"] = existing_sha is not None
             results.append(res)
-        # Update sitemap.xml if public URL is configured
+        # Update sitemap.xml + blog index if public URL is configured
         page_url = _github_public_page_url(site, slug)
         if page_url:
             try:
@@ -493,6 +494,11 @@ async def publish_draft_to_github(draft_id: str, user=Depends(get_current_user))
             except Exception as exc:
                 logger.warning("Sitemap update failed: %s", exc)
                 sitemap_result = {"error": str(exc)}
+            try:
+                blog_index_result = await _github_update_blog_index(client, token, owner, repo, branch, d, slug, page_url)
+            except Exception as exc:
+                logger.warning("Blog index update failed: %s", exc)
+                blog_index_result = {"error": str(exc)}
 
     # Update draft status
     public_url = _github_public_page_url(site, slug)
@@ -509,6 +515,7 @@ async def publish_draft_to_github(draft_id: str, user=Depends(get_current_user))
         "ok": True,
         "files": results,
         "sitemap": sitemap_result,
+        "blog_index": blog_index_result,
         "public_url": public_url,
         "commit_sha": results[0].get("commit_sha"),
         "commit_url": results[0].get("commit_url"),
@@ -582,6 +589,74 @@ async def _github_update_sitemap(client, token, owner, repo, branch, folder, pag
     msg = f"LOGI SEO: sitemap.xml — {action} ({slug})"
     res = await _github_put_file(client, token, owner, repo, target_path, branch, msg, new_xml, existing_sha)
     return {"path": target_path, "action": action, "commit_sha": res.get("commit_sha"), "commit_url": res.get("commit_url")}
+
+
+async def _github_update_blog_index(client, token, owner, repo, branch, draft, slug, page_url):
+    """Maintain articles.json + inject article cards into the blog's index.html (id="articles")."""
+    import base64
+    import html as _html
+    import json as _json
+    aj_path = "articles.json"
+    r = await client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{aj_path}",
+                         headers=_github_headers(token), params={"ref": branch})
+    articles, aj_sha = [], None
+    if r.status_code == 200:
+        aj_sha = r.json().get("sha")
+        try:
+            articles = _json.loads(base64.b64decode(r.json().get("content", "")).decode("utf-8"))
+            if not isinstance(articles, list):
+                articles = []
+        except Exception:
+            articles = []
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    articles = [a for a in articles if a.get("slug") != slug]
+    articles.insert(0, {
+        "slug": slug,
+        "title": draft.get("title") or "",
+        "description": draft.get("meta_description") or "",
+        "url": page_url,
+        "date": today,
+        "cover": draft.get("cover_image_url") or "",
+    })
+    articles.sort(key=lambda a: a.get("date", ""), reverse=True)
+    await _github_put_file(client, token, owner, repo, aj_path, branch,
+                           f"LOGI SEO: articles.json ({slug})",
+                           _json.dumps(articles, ensure_ascii=False, indent=2), aj_sha)
+
+    idx_path = "index.html"
+    r2 = await client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{idx_path}",
+                          headers=_github_headers(token), params={"ref": branch})
+    if r2.status_code != 200:
+        return {"action": "articles_json_only", "count": len(articles)}
+    idx_sha = r2.json().get("sha")
+    try:
+        idx_html = base64.b64decode(r2.json().get("content", "")).decode("utf-8")
+    except Exception:
+        return {"action": "articles_json_only", "count": len(articles)}
+    if 'id="articles"' not in idx_html:
+        return {"action": "articles_json_only", "count": len(articles)}
+
+    def _fmt_date(dd):
+        try:
+            return datetime.strptime(dd, "%Y-%m-%d").strftime("%d/%m/%Y")
+        except Exception:
+            return dd
+    cards = "\n".join(
+        f'        <a class="article" href="{a["url"]}">'
+        f'<h2>{_html.escape(a.get("title", ""))}</h2>'
+        f'<p style="color:#94a3b8;font-size:13px;margin-bottom:6px">{_fmt_date(a.get("date", ""))}</p>'
+        f'<p>{_html.escape(a.get("description", ""))}</p></a>'
+        for a in articles
+    )
+    new_idx = re.sub(
+        r'(<div class="articles" id="articles">).*?(</div>\s*</main>)',
+        lambda m: m.group(1) + "\n" + cards + "\n      " + m.group(2),
+        idx_html, flags=re.DOTALL,
+    )
+    if new_idx != idx_html:
+        await _github_put_file(client, token, owner, repo, idx_path, branch,
+                               f"LOGI SEO: index.html ({slug})", new_idx, idx_sha)
+    return {"action": "index_updated", "count": len(articles)}
 
 
 @api.get("/drafts/{draft_id}/export")
