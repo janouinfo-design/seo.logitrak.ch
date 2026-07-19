@@ -22,8 +22,8 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
-  const register = async (email, password, full_name) => {
-    const { data } = await api.post("/auth/register", { email, password, full_name });
+  const register = async (email, password, full_name, inviteToken) => {
+    const { data } = await api.post("/auth/register", { email, password, full_name, invite_token: inviteToken || null });
     persist(data.token, data.user);
     return data.user;
   };

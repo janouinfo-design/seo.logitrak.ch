@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 17: tested Admin panel + Workspace/Invite/RBAC end-to-end. Backend: 21/21 pytest passing after fixing UserPublic pydantic schema (missing 3 fields). Frontend: admin panel + team invite flow + demo access denial verified visually. Three UI bugs found on the invited-user experience (no acting-role-badge, Facturation/Équipe still visible).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/auth/me (UserPublic schema in /app/backend/app_core.py L144)",
+        "issue": "FIXED IN THIS ITERATION. UserPublic model was missing `is_admin`, `workspace_role`, `acting_workspace_name` — pydantic dropped them from responses even though get_current_user + me() populated them. Fix: added the 3 optional fields to UserPublic. Frontend needs these to conditionally render nav-admin, invite banners, and acting-role-badge. Verified 200 with is_admin=true for contact@logitrak.ch and is_admin=false for demo@logirent.fr; workspace_role='editor'/'viewer' + acting_workspace_name populated for invited users.",
+        "priority": "CRITICAL (fixed)"
+      }
+    ],
+    "minor": [
+      {"endpoint": "/api/admin/users", "issue": "Returns {\"users\": [...]} envelope; spec says list. Non-blocking (frontend adapts) but inconsistent with GET /api/team/invite-info flat shape."},
+      {"endpoint": "/api/team/members", "issue": "Returns {\"members\": [...]} envelope; same inconsistency."},
+      {"endpoint": "/api/workspace/memberships", "issue": "Returns {\"memberships\": [...]} envelope; same inconsistency."},
+      {"endpoint": "/api/workspace", "issue": "No top-level `plan_limit`; must dig `usage.articles_limit`. Minor DX issue."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Layout.jsx sidebar (invited user)", "issue": "acting-role-badge NOT rendered when user is acting in another workspace. Spec: 'badge acting-role-badge visible dans la sidebar en bas avec Lecteur'. After registering via /register?invite=..., the badge is absent.", "selector": "[data-testid='acting-role-badge']", "priority": "HIGH"},
+      {"component": "Layout.jsx sidebar (invited viewer)", "issue": "nav-billing (Facturation) still visible for a viewer acting in another workspace. Spec: 'PAS de lien Facturation ni Équipe dans la sidebar' for invited users.", "selector": "[data-testid='nav-billing']", "priority": "HIGH"},
+      {"component": "Layout.jsx sidebar (invited viewer)", "issue": "nav-team (Équipe) still visible for a viewer acting in another workspace. Same spec violation.", "selector": "[data-testid='nav-team']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_admin_workspace_invites.py",
+    "/app/test_reports/pytest/iteration_17.xml"
+  ],
+  "action_items": [
+    "In Layout.jsx: render the acting-role-badge in the bottom of the sidebar whenever me.workspace_role is set (show localized 'Lecteur'/'Éditeur'/'Admin').",
+    "In Layout.jsx: hide nav-billing and nav-team when me.workspace_role is set (user is acting in someone else's workspace — only owners/admins should manage billing & team). Optionally also hide nav-admin unless me.is_admin and not acting (already handled: nav-admin was correctly hidden for demo).",
+    "Consider flattening admin/users, team/members, workspace/memberships to bare arrays (or document the envelope shape), for API consistency. Not blocking."
+  ],
+  "critical_code_review_comments": [
+    "UserPublic pydantic model was silently stripping computed fields (is_admin, workspace_role, acting_workspace_name) — this is exactly the class of bug that pydantic response_model causes. Suggest either (a) using response_model_exclude_none + explicit fields as done in fix, or (b) dropping response_model on /auth/me and returning the raw dict, or (c) adding a unit test that asserts /auth/me returns is_admin for an admin email so regressions surface immediately.",
+    "Response envelope inconsistency: some endpoints wrap ({users:[]}, {members:[]}, {memberships:[]}) while others return bare objects. Pick one convention.",
+    "_EDITOR_BLOCKED_PREFIXES includes '/api/workspace' but _ROLE_ALWAYS_ALLOWED whitelists '/api/workspace/switch' and '/api/workspace/memberships'. Correct, but the interaction is subtle — consider a comment explaining that GET /api/workspace is allowed only because _enforce_member_role early-returns on GET."
+  ],
+  "updated_files": [
+    "/app/backend/app_core.py (added is_admin, workspace_role, acting_workspace_name to UserPublic)",
+    "/app/backend/tests/test_admin_workspace_invites.py (new)"
+  ],
+  "success_rate": {"backend": "100% (21/21 pytest)", "frontend": "70% (admin panel, team page invite, demo-denied all OK; 3 sidebar UI regressions on invited-viewer)"},
+  "test_credentials": "contact@logitrak.ch / AdminTest2026!  |  demo@logirent.fr / demo1234  (both verified working)",
+  "seed_data_creation": "Created invites & registered users testeur.equipe+<rand>@example.com and testeur.ui2@example.com — CLEANED UP at end: DELETE /api/team/members (both), revoked pending invite testeur.ui@example.com, reset demo user plan back to 'free'. No leftover test data.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend 100% green. Fix applied to UserPublic model in app_core.py — retest /api/auth/me after any future changes to that model or get_current_user. The 3 frontend bugs are all in Layout.jsx conditional rendering based on me.workspace_role / me.acting_workspace_name (which the API now correctly returns after the schema fix). RBAC works correctly at backend level (editor blocked on POST /api/sites, viewer blocked on POST /api/drafts, both with correct French messages). ADMIN_EMAILS is loaded from backend/.env — do not touch. Registered user test data has been fully cleaned up.",
+  "rca of the issue": "Root cause of the initial 'is_admin missing / workspace_role missing' symptom: UserPublic BaseModel in /app/backend/app_core.py declared only {id,email,full_name,created_at}. FastAPI's response_model=UserPublic silently strips any additional kwargs passed to the constructor (Pydantic v2 ignores unknown fields at construction time when they aren't declared). The me() endpoint was correctly passing is_admin/workspace_role/acting_workspace_name, but they never reached the client. Reproduction: GET /api/auth/me with an admin token → 200 with only 4 keys. Mitigation applied: added the 3 fields as Optional to UserPublic. Backend restarted, all 21 tests now pass. Frontend still shows navigation bugs because Layout.jsx apparently doesn't (or didn't) branch on these fields — needs the fixes noted in action_items."
+}

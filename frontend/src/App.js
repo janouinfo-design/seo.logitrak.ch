@@ -29,6 +29,8 @@ import KeywordIntelligence from "@/pages/KeywordIntelligence";
 import Aide from "@/pages/Aide";
 import BusinessAnalyzer from "@/pages/BusinessAnalyzer";
 import Competitors from "@/pages/Competitors";
+import Team from "@/pages/Team";
+import Admin from "@/pages/Admin";
 
 function App() {
   return (
@@ -65,6 +67,8 @@ function App() {
               <Route path="/automation" element={<Automation />} />
               <Route path="/workflows" element={<Workflows />} />
               <Route path="/billing" element={<Billing />} />
+              <Route path="/team" element={<Team />} />
+              <Route path="/admin" element={<Admin />} />
               <Route path="/aide" element={<Aide />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

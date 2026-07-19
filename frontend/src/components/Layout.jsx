@@ -1,6 +1,8 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSites } from "@/contexts/SiteContext";
+import { api } from "@/lib/api";
 import {
   LayoutDashboard,
   Globe,
@@ -24,6 +26,9 @@ import {
   Building2,
   Swords,
   Zap,
+  Users,
+  ShieldCheck,
+  Briefcase,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -65,14 +70,83 @@ const navGroups = [
       { to: "/history", icon: History, label: "Historique", testid: "nav-history" },
     ],
   },
-  {
-    title: "Compte",
-    items: [
-      { to: "/billing", icon: CreditCard, label: "Facturation", testid: "nav-billing" },
-      { to: "/aide", icon: HelpCircle, label: "Aide", testid: "nav-aide" },
-    ],
-  },
 ];
+
+function buildNavGroups(user) {
+  const role = user?.workspace_role;
+  const restricted = role === "editor" || role === "viewer";
+  const compte = [];
+  if (!restricted) {
+    compte.push({ to: "/billing", icon: CreditCard, label: "Facturation", testid: "nav-billing" });
+    compte.push({ to: "/team", icon: Users, label: "Équipe", testid: "nav-team" });
+  }
+  compte.push({ to: "/aide", icon: HelpCircle, label: "Aide", testid: "nav-aide" });
+  if (user?.is_admin) {
+    compte.push({ to: "/admin", icon: ShieldCheck, label: "Admin", testid: "nav-admin" });
+  }
+  return [...navGroups, { title: "Compte", items: compte }];
+}
+
+const WS_ROLE_LABELS = { owner: "Propriétaire", admin: "Admin", editor: "Éditeur", viewer: "Lecteur" };
+
+function WorkspaceSwitcher() {
+  const [memberships, setMemberships] = useState([]);
+
+  useEffect(() => {
+    api.get("/workspace/memberships")
+      .then(({ data }) => setMemberships(data.memberships || []))
+      .catch(() => {});
+  }, []);
+
+  if (memberships.length < 2) return null;
+  const active = memberships.find((m) => m.active) || memberships[0];
+
+  const switchTo = async (m) => {
+    if (m.active) return;
+    try {
+      await api.post("/workspace/switch", { workspace_id: m.workspace_id });
+      window.location.reload();
+    } catch (e) {
+      /* toast handled by interceptor */
+    }
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className="mt-2 w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-slate-200 bg-slate-50 hover:border-slate-300 transition-colors"
+        data-testid="workspace-switcher-trigger"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Briefcase className="w-4 h-4 text-[#002FA7] flex-shrink-0" />
+          <div className="text-left min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Espace de travail</div>
+            <div className="text-xs font-medium text-slate-900 truncate">{active.name}</div>
+          </div>
+        </div>
+        <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[260px]">
+        <DropdownMenuLabel className="text-xs uppercase tracking-wider text-slate-500">Vos espaces</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {memberships.map((m) => (
+          <DropdownMenuItem
+            key={m.workspace_id}
+            onClick={() => switchTo(m)}
+            className="flex items-center justify-between cursor-pointer"
+            data-testid={`workspace-option-${m.workspace_id}`}
+          >
+            <div>
+              <div className="text-sm font-medium">{m.name}</div>
+              <div className="text-[10px] text-slate-500">{WS_ROLE_LABELS[m.role] || m.role}</div>
+            </div>
+            {m.active && <Check className="w-4 h-4 text-[#002FA7]" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 function SiteSwitcher() {
   const { sites, activeSite, selectSite } = useSites();
@@ -138,6 +212,7 @@ function SiteSwitcher() {
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const groups = buildNavGroups(user);
 
   return (
     <div className="min-h-screen flex bg-[#FAFAFA]">
@@ -157,10 +232,11 @@ export default function Layout() {
 
         <div className="p-3 border-b border-slate-200">
           <SiteSwitcher />
+          <WorkspaceSwitcher />
         </div>
 
         <nav className="flex-1 p-3 overflow-y-auto">
-          {navGroups.map((group, gi) => (
+          {groups.map((group, gi) => (
             <div key={gi} className={gi > 0 ? "mt-3" : ""}>
               {group.title && (
                 <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
@@ -208,6 +284,14 @@ export default function Layout() {
           <div className="px-3 py-2 mb-1">
             <div className="text-xs font-medium text-slate-900 truncate">{user?.full_name}</div>
             <div className="text-[11px] text-slate-500 truncate">{user?.email}</div>
+            {user?.workspace_role && (
+              <div
+                className="mt-1 text-[10px] font-medium text-[#002FA7] bg-[#002FA7]/5 border border-[#002FA7]/15 rounded px-1.5 py-0.5 inline-block truncate max-w-full"
+                data-testid="acting-role-badge"
+              >
+                {user.acting_workspace_name} · {WS_ROLE_LABELS[user.workspace_role] || user.workspace_role}
+              </div>
+            )}
           </div>
           <button
             onClick={logout}

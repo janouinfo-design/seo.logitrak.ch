@@ -40,6 +40,8 @@ import routes_workflows  # noqa: F401
 import routes_keywords  # noqa: F401
 import routes_optimizer  # noqa: F401
 import routes_analysis  # noqa: F401
+import routes_team  # noqa: F401
+import routes_admin  # noqa: F401
 
 from routes_google import _capture_rank_snapshot
 from routes_pipeline import _calendar_processor_job

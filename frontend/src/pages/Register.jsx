@@ -1,14 +1,32 @@
-import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const inviteToken = searchParams.get("invite");
+  const [invite, setInvite] = useState(null);
   const [form, setForm] = useState({ full_name: "", email: "", password: "" });
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!inviteToken) return;
+    api.get(`/team/invite-info?token=${encodeURIComponent(inviteToken)}`)
+      .then(({ data }) => {
+        if (data.valid) {
+          setInvite(data);
+          setForm((f) => ({ ...f, email: data.email }));
+        } else {
+          toast.error("Cette invitation n'est plus valide.");
+        }
+      })
+      .catch(() => {});
+  }, [inviteToken]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -16,9 +34,9 @@ export default function Register() {
     e.preventDefault();
     setLoading(true);
     try {
-      await register(form.email, form.password, form.full_name);
+      await register(form.email, form.password, form.full_name, invite ? inviteToken : null);
       toast.success("Compte créé");
-      navigate("/sites");
+      navigate(invite ? "/" : "/sites");
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Échec de l'inscription");
     } finally {
@@ -42,11 +60,24 @@ export default function Register() {
 
           <div className="overline mb-2">Inscription</div>
           <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-slate-950 mb-2">
-            Créez votre compte.
+            {invite ? "Rejoignez l'équipe." : "Créez votre compte."}
           </h1>
-          <p className="text-sm text-slate-600 mb-8">
-            Connectez Logirent ou Logitime en moins de 2 minutes.
+          <p className="text-sm text-slate-600 mb-6">
+            {invite ? "Créez votre compte pour accéder à l'espace de travail." : "Connectez Logirent ou Logitime en moins de 2 minutes."}
           </p>
+
+          {invite && (
+            <div
+              className="mb-6 flex items-start gap-3 rounded-md border border-[#002FA7]/20 bg-[#002FA7]/5 px-4 py-3"
+              data-testid="invite-banner"
+            >
+              <Users className="w-4 h-4 text-[#002FA7] mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-slate-700">
+                Vous rejoignez l'espace <strong>{invite.workspace_name}</strong> en tant que{" "}
+                <strong>{invite.role_label}</strong>.
+              </div>
+            </div>
+          )}
 
           <form onSubmit={onSubmit} className="space-y-4" data-testid="register-form">
             <div>
@@ -68,9 +99,10 @@ export default function Register() {
                 name="email"
                 autoComplete="username email"
                 required
+                readOnly={!!invite}
                 value={form.email}
                 onChange={set("email")}
-                className="w-full border border-slate-300 rounded-md px-3 py-2.5 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7]"
+                className={`w-full border border-slate-300 rounded-md px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#002FA7]/30 focus:border-[#002FA7] ${invite ? "bg-slate-50 text-slate-500" : "bg-white"}`}
                 placeholder="vous@logirent.fr"
               />
             </div>
@@ -95,7 +127,7 @@ export default function Register() {
               data-testid="register-submit-button"
               className="w-full bg-[#002FA7] hover:bg-[#001D6B] disabled:opacity-60 text-white rounded-md py-2.5 text-sm font-medium transition-colors shadow-sm"
             >
-              {loading ? "Création…" : "Créer mon compte"}
+              {loading ? "Création…" : invite ? "Créer mon compte et rejoindre" : "Créer mon compte"}
             </button>
           </form>
 

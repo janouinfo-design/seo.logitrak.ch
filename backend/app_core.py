@@ -98,6 +98,25 @@ app = FastAPI(title="LOGI SEO Booster")
 api = APIRouter(prefix="/api")
 security = HTTPBearer(auto_error=False)
 
+PLATFORM_ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+
+_ROLE_ALWAYS_ALLOWED = ("/api/auth/", "/api/workspace/switch", "/api/workspace/memberships")
+_EDITOR_BLOCKED_PREFIXES = ("/api/sites", "/api/billing", "/api/team", "/api/admin", "/api/workspace")
+
+
+def _enforce_member_role(role: str, request) -> None:
+    if request is None:
+        return
+    if request.method.upper() in ("GET", "HEAD", "OPTIONS"):
+        return
+    path = request.url.path
+    if any(path.startswith(p) for p in _ROLE_ALWAYS_ALLOWED):
+        return
+    if role == "viewer":
+        raise HTTPException(403, "Votre rôle Lecteur est en consultation seule dans cet espace de travail.")
+    if role == "editor" and any(path.startswith(p) for p in _EDITOR_BLOCKED_PREFIXES):
+        raise HTTPException(403, "Votre rôle Éditeur ne permet pas de gérer les sites, l'équipe ou la facturation.")
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -114,6 +133,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     full_name: str = Field(min_length=1)
+    invite_token: Optional[str] = None
 
 
 class UserLogin(BaseModel):
@@ -126,6 +146,9 @@ class UserPublic(BaseModel):
     email: EmailStr
     full_name: str
     created_at: str
+    is_admin: Optional[bool] = False
+    workspace_role: Optional[str] = None
+    acting_workspace_name: Optional[str] = None
 
 
 class AuthResponse(BaseModel):
@@ -327,7 +350,7 @@ def create_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-async def get_current_user(creds: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> dict:
+async def get_current_user(request: Request = None, creds: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> dict:
     if not creds:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token manquant")
     try:
@@ -337,6 +360,25 @@ async def get_current_user(creds: Optional[HTTPAuthorizationCredentials] = Depen
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Utilisateur introuvable")
+    ws_id = user.get("active_workspace_id")
+    if ws_id:
+        ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0})
+        if ws and ws.get("owner_id") != user["id"]:
+            member = await db.workspace_members.find_one({"workspace_id": ws_id, "user_id": user["id"]}, {"_id": 0})
+            owner = await db.users.find_one({"id": ws["owner_id"]}, {"_id": 0, "password_hash": 0}) if member else None
+            if member and owner:
+                role = member.get("role", "viewer")
+                _enforce_member_role(role, request)
+                return {
+                    **owner,
+                    "real_user_id": user["id"],
+                    "real_email": user["email"],
+                    "real_full_name": user.get("full_name", ""),
+                    "workspace_role": role,
+                    "acting_workspace_id": ws_id,
+                    "acting_workspace_name": ws.get("name", ""),
+                }
+            await db.users.update_one({"id": user["id"]}, {"$unset": {"active_workspace_id": ""}})
     return user
 
 
@@ -346,7 +388,35 @@ def user_to_public(user: dict) -> UserPublic:
         email=user["email"],
         full_name=user["full_name"],
         created_at=user["created_at"],
+        is_admin=user["email"].lower() in PLATFORM_ADMIN_EMAILS,
     )
+
+
+async def _accept_pending_invites(user_doc: dict, invite_token: Optional[str] = None) -> None:
+    ors = [{"email": user_doc["email"]}]
+    if invite_token:
+        ors.append({"token": invite_token})
+    invites = await db.workspace_invites.find({"status": "pending", "$or": ors}, {"_id": 0}).to_list(20)
+    joined = None
+    for inv in invites:
+        exists = await db.workspace_members.find_one({"workspace_id": inv["workspace_id"], "user_id": user_doc["id"]})
+        if not exists:
+            await db.workspace_members.insert_one({
+                "id": gen_id(),
+                "workspace_id": inv["workspace_id"],
+                "owner_id": inv["owner_id"],
+                "user_id": user_doc["id"],
+                "email": user_doc["email"],
+                "role": inv.get("role", "viewer"),
+                "joined_at": now_iso(),
+            })
+        await db.workspace_invites.update_one(
+            {"id": inv["id"]},
+            {"$set": {"status": "accepted", "accepted_at": now_iso(), "accepted_by": user_doc["id"]}},
+        )
+        joined = joined or inv["workspace_id"]
+    if joined:
+        await db.users.update_one({"id": user_doc["id"]}, {"$set": {"active_workspace_id": joined}})
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +435,10 @@ async def register(payload: UserCreate):
         "created_at": now_iso(),
     }
     await db.users.insert_one(user_doc)
+    try:
+        await _accept_pending_invites(user_doc, payload.invite_token)
+    except Exception as exc:
+        logger.warning("Invite acceptance failed for %s: %s", user_doc["email"], exc)
     return AuthResponse(token=create_token(user_doc["id"]), user=user_to_public(user_doc))
 
 
@@ -378,7 +452,16 @@ async def login(payload: UserLogin):
 
 @api.get("/auth/me", response_model=UserPublic)
 async def me(user=Depends(get_current_user)):
-    return user_to_public(user)
+    email = user.get("real_email") or user["email"]
+    return UserPublic(
+        id=user.get("real_user_id") or user["id"],
+        email=email,
+        full_name=user.get("real_full_name") or user["full_name"],
+        created_at=user["created_at"],
+        workspace_role=user.get("workspace_role"),
+        acting_workspace_name=user.get("acting_workspace_name"),
+        is_admin=email.lower() in PLATFORM_ADMIN_EMAILS,
+    )
 
 
 # ---------------------------------------------------------------------------
