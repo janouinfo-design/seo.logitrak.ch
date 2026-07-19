@@ -16,16 +16,29 @@ export function AuthProvider({ children }) {
     setUser(u);
   }, []);
 
+  const refreshMe = useCallback(async () => {
+    try {
+      const { data } = await api.get("/auth/me");
+      localStorage.setItem("logi_user", JSON.stringify(data));
+      setUser(data);
+      return data;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
     persist(data.token, data.user);
-    return data.user;
+    const full = await refreshMe();
+    return full || data.user;
   };
 
   const register = async (email, password, full_name, inviteToken) => {
     const { data } = await api.post("/auth/register", { email, password, full_name, invite_token: inviteToken || null });
     persist(data.token, data.user);
-    return data.user;
+    const full = await refreshMe();
+    return full || data.user;
   };
 
   const logout = () => {

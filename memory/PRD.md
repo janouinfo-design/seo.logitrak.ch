@@ -224,6 +224,18 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   (+ champ `is_admin`) et dashboard agents. contact@logitrak.ch = admin sur le VPS de l'utilisateur.
   VPS : ajouter `ADMIN_EMAILS=contact@logitrak.ch` dans /opt/logi-seo-booster/.env (sed avant echo !).
 
+- [x] **Panneau Admin + Workspaces multi-utilisateurs (RBAC)** (2026-06-15, testé 21/21 backend + frontend E2E) :
+  (1) **Panneau Admin** `/admin` (réservé ADMIN_EMAILS) : stats globales (users, sites, articles, revenus,
+  répartition plans) + table utilisateurs avec changement de plan manuel. Backend `routes_admin.py`.
+  (2) **Équipe** `/team` : invitations par email (3 rôles admin/éditeur/lecteur), lien /register?invite=TOKEN,
+  auto-acceptation à l'inscription OU au login (comptes existants, via GET /workspace/memberships).
+  Backend `routes_team.py` + `app_core.py` (get_current_user résout l'acting workspace : le membre agit
+  avec l'identité data du propriétaire + real_user_id/workspace_role ; RBAC enforcement : viewer=lecture
+  seule, editor=pas de sites/billing/team/admin). Sélecteur d'espace de travail dans la sidebar,
+  badge de rôle, nav conditionnelle (Facturation/Équipe masqués pour éditeur/lecteur, Admin visible
+  pour ADMIN_EMAILS). AuthContext rafraîchit /auth/me après login/register (bugfix rôle).
+  ⚠️ Leçon: ne PAS faire plusieurs search_replace sur le MÊME fichier dans un seul batch parallèle (3 éditions perdues).
+
 ## Backlog / Phase 2 (P0)
 - [x] Génération en lot (batch) — fait (Automation.jsx)
 - [x] Calendrier éditorial cron — fait
