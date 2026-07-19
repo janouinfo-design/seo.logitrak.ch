@@ -7,7 +7,7 @@ from typing import Dict
 from typing import Optional
 from app_core import api, db, get_current_user
 from routes_sites import _get_user_site
-from routes_billing import PLANS, _count_articles_this_month, _get_or_create_workspace
+from routes_billing import _count_articles_this_month, _effective_plan, _get_or_create_workspace
 
 # ---------------------------------------------------------------------------
 # Performance (mocked GSC/GA for MVP)
@@ -152,7 +152,7 @@ async def agents_overview(site_id: Optional[str] = None, user=Depends(get_curren
 
     # --- Content Agent ---
     ws = await _get_or_create_workspace(user)
-    plan = PLANS.get(ws.get("plan", "free"), PLANS["free"])
+    plan = _effective_plan(user, ws)
     used = await _count_articles_this_month(uid)
     last_draft = await db.drafts.find_one(
         sq, {"_id": 0, "id": 1, "title": 1, "status": 1, "updated_at": 1},

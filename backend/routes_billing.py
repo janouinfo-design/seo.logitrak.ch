@@ -13,6 +13,27 @@ from app_core import api, db, gen_id, get_current_user, logger, now_iso
 # Workspace + Billing (Stripe)
 # ---------------------------------------------------------------------------
 STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
+ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+
+ADMIN_PLAN = {
+    "name": "Admin",
+    "price_eur": 0.0,
+    "articles_per_month": 999999,
+    "sites_max": 999,
+    "auto_publish": True,
+    "features": ["Accès administrateur", "Articles illimités", "Sites illimités", "Toutes les fonctionnalités"],
+}
+
+
+def _is_admin(user: dict) -> bool:
+    return (user.get("email") or "").lower() in ADMIN_EMAILS
+
+
+def _effective_plan(user: dict, ws: dict) -> dict:
+    if _is_admin(user):
+        return ADMIN_PLAN
+    return PLANS.get(ws.get("plan", "free"), PLANS["free"])
+
 
 PLANS = {
     "free": {
@@ -79,6 +100,8 @@ async def _count_articles_this_month(user_id: str) -> int:
 
 async def _enforce_plan_quota(user: dict) -> None:
     """Raise HTTPException if user hits the article quota of their current plan."""
+    if _is_admin(user):
+        return
     ws = await _get_or_create_workspace(user)
     plan = PLANS.get(ws.get("plan", "free"), PLANS["free"])
     used = await _count_articles_this_month(user["id"])
@@ -92,12 +115,13 @@ async def _enforce_plan_quota(user: dict) -> None:
 @api.get("/workspace")
 async def get_workspace(user=Depends(get_current_user)):
     ws = await _get_or_create_workspace(user)
-    plan = PLANS.get(ws.get("plan", "free"), PLANS["free"])
+    plan = _effective_plan(user, ws)
     articles_used = await _count_articles_this_month(user["id"])
     return {
         "id": ws["id"],
         "name": ws["name"],
-        "plan": ws["plan"],
+        "plan": "admin" if _is_admin(user) else ws["plan"],
+        "is_admin": _is_admin(user),
         "plan_details": plan,
         "plan_expires_at": ws.get("plan_expires_at"),
         "usage": {

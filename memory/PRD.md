@@ -218,6 +218,12 @@ Préférence : 20 fonctionnalités exceptionnelles plutôt que 100 moyennes.
   Note utilisateur : HTTPS GitHub Pages activé (cert Let's Encrypt émis après re-save du custom domain),
   token classique `repo` créé (les fine-grained posaient problème). Publication GitHub 100% fonctionnelle E2E.
 
+- [x] **Super admin via ADMIN_EMAILS** (2026-06-15, testé curl) : `routes_billing.py` — var env
+  `ADMIN_EMAILS` (liste d'emails séparés par virgules). Emails admin : quota articles illimité
+  (`_enforce_plan_quota` bypass), plan affiché "Admin" (999999 articles/mois) dans /api/workspace
+  (+ champ `is_admin`) et dashboard agents. contact@logitrak.ch = admin sur le VPS de l'utilisateur.
+  VPS : ajouter `ADMIN_EMAILS=contact@logitrak.ch` dans /opt/logi-seo-booster/.env (sed avant echo !).
+
 ## Backlog / Phase 2 (P0)
 - [x] Génération en lot (batch) — fait (Automation.jsx)
 - [x] Calendrier éditorial cron — fait
